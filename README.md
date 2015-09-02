@@ -87,8 +87,8 @@ an energy utilisation of 61mAH, compared to the 225mAH nominal capacity of a CR2
 @moose measured the startup charge required by the Pyboard [here](http://forum.micropython.org/viewtopic.php?f=6&t=607).
 This corresponds to about 9mAS or 0.0025mAH. If we start every ten minutes, annual consumption from
 startup events is 0.0025*6*24*365 = 131mAH. Added to the 61mAH from standby gives 192mAH, close to the
-capacity of the cell. This sets an upper bound on the frequency of power up events for the notional one
-year runtime.
+capacity of the cell. This sets an upper bound on the frequency of power up events to achieve the notional
+one year runtime.
  
 A more heavy duty test involved updating an epaper display with the following script
  
@@ -126,15 +126,18 @@ else:
 Modules from [here](https://github.com/peterhinch/micropython-epaper.git).
 
 This used an average of 85mA for 6S to do an update. If the script performed one refresh per hour this would equate
-to 85*6/3600 = 141uA average + 7uA quiescent = 148uA. This would exhaust a CR2032 in 9 weeks. However a year's
-running would be achievable if the circuit were powered from three AA alkaline cells - obviously the regulator would be
-retained in this instance.
+to 85*6/3600 = 141uA average + 7uA quiescent = 148uA. This would exhaust a CR2032 in 9 weeks. An alternative is the
+larger CR2450 button cell with 540mAH capacity which would provide 5 months running.
+
+A year's running would be achievable if the circuit were powered from three AA alkaline cells - obviously the
+regulator would be retained in this instance:
 
 Power = 141uA + 29uA quiescent = 170uA * 24 * 365 = 1.5AH which is within the nominal capacity of these cells.
 
 # Pyboard enhancements
 
-It would be good if a future iteration of the Pyboard included the following, controllable in user code:  
+Micropower operation would be made more straightforward if a future iteration of the Pyboard included the following,
+controllable in user code:  
  1. A switched 3.3V peripheral power output.  
  2. A facility to disable the I2C pullups.  
  3. A facility to disable the regulator via its enable pin.
