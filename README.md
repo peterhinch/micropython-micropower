@@ -74,26 +74,26 @@ devices including the NRF24L01 radio, is provided in the file epd_vddonly.fzz - 
  
 # Pyboard modification
  
- For the very lowest power consumption the LDO regulator should be removed from the Pyboard. Doing this
- will doubtless void your warranty and commits you to providing a 3.3V power supply even when connecting
- to the Pyboard with USB. The regulator is the rectangular component with five leads located near the
- X3 pins [here](http://micropython.org/static/resources/pybv10-pinout.jpg).
+For the very lowest power consumption the LDO regulator should be removed from the Pyboard. Doing this
+will doubtless void your warranty and commits you to providing a 3.3V power supply even when connecting
+to the Pyboard with USB. The regulator is the rectangular component with five leads located near the
+X3 pins [here](http://micropython.org/static/resources/pybv10-pinout.jpg).
  
 # Some numbers
  
- With the regulator removed the Pyboard consumes about 7uA. In a year of operation this corrsponds to
- an energy utilisation of 61mAH, compared to the 225mAH nominal capacity of a CR2032 cell.
+With the regulator removed the Pyboard consumes about 7uA. In a year of operation this corrsponds to
+an energy utilisation of 61mAH, compared to the 225mAH nominal capacity of a CR2032 cell.
  
- @moose measured the startup charge required by the Pyboard [here](http://forum.micropython.org/viewtopic.php?f=6&t=607).
- This corresponds to about 9mAS or 0.0025mAH. If we start every ten minutes, annual consumption from
- startup events is 0.0025*6*24*365 = 131mAH. Added to the 61mAH from standby gives 192mAH, close to the
- capacity of the cell. This sets an upper bound on the frequency of power up events for the notional one
- year runtime.
+@moose measured the startup charge required by the Pyboard [here](http://forum.micropython.org/viewtopic.php?f=6&t=607).
+This corresponds to about 9mAS or 0.0025mAH. If we start every ten minutes, annual consumption from
+startup events is 0.0025*6*24*365 = 131mAH. Added to the 61mAH from standby gives 192mAH, close to the
+capacity of the cell. This sets an upper bound on the frequency of power up events for the notional one
+year runtime.
  
- A more heavy duty test involved updating an epaper display with the following script
+A more heavy duty test involved updating an epaper display with the following script
  
- ```python
- import pyb, epaper, stm
+```python
+import pyb, epaper, stm
 from micropower import PowerController
 rtc = pyb.RTC()
 
