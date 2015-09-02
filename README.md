@@ -72,14 +72,14 @@ An editable version, with a PCB designed to simplify connectivity to the epaper 
 devices including the NRF24L01 radio, is provided in the file epd_vddonly.fzz - this requires the free
 (as in beer) software from [Fritzing](http://fritzing.org/home/) where copies of the PCB can be ordered.
  
- # Pyboard modification
+# Pyboard modification
  
  For the very lowest power consumption the LDO regulator should be removed from the Pyboard. Doing this
  will doubtless void your warranty and commits you to providing a 3.3V power supply even when connecting
  to the Pyboard with USB. The regulator is the rectangular component with five leads located near the
  X3 pins [here](http://micropython.org/static/resources/pybv10-pinout.jpg).
  
- # Some numbers
+# Some numbers
  
  With the regulator removed the Pyboard consumes about 7uA. In a year of operation this corrsponds to
  an energy utilisation of 61mAH, compared to the 225mAH nominal capacity of a CR2032 cell.
