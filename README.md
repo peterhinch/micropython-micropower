@@ -4,9 +4,22 @@ Some ideas for building ultra low power systems based on the Pyboard
 These notes describe some general points in achieving minimum power draw from Pyboard based systems. A
 circuit design and PCB layout are offered for achieving this when the Pyboard is used with external chips
 or modules; it was specifically designed for the e-paper display and the NRF24L01 radio, but it could
-readily be used with other devices.
+readily be used with other devices. Some calculations are presented suggesting limits to the runtimes
+that might be achieved from various types of batteries.
 
-When in standby mode the current drawn by the MPU drops to some 4uA. The Pyboard as a whole draws typically
+## Use cases
+
+I have considered two types of use case. The first is a monitoring application which periodically wakes,
+reads some data from a sensor then returns to standby. At intervals it uses an NRF24L01 radio to send the
+accumulated data to a remote host. The second is a remote display using the NRF24L01 to acquire data from
+a remote host and an e-paper display to enable this to be presented when the Pyboard is in standby. In
+either cae the Pyboard might be battery powered or powered from a power constrained source such as solar
+voltaic cells.
+
+## Standby mode
+
+To achieve minimum power the code must be deigned so that the Pyboard spends the majority of its time in
+standby mode. In this mode the current drawn by the MPU drops to some 4uA. The Pyboard draws about
 30uA largely owing to the onboard LDO voltage regulator which cannot (without surgery) be disabled. A
 typical application will use code along these lines:
 
@@ -21,7 +34,7 @@ if not usb_connected:
 if stm.mem32[stm.RTC + stm.RTC_BKP1R] == 0:     # first boot
    rtc.datetime((2015, 8, 6, 4, 13, 0, 0, 0))   # Code to run on 1st boot only
 
- # code to run every time
+ # code to run every time goes here
 rtc.wakeup(20000)
 stm.mem32[stm.RTC + stm.RTC_BKP1R] = 1 # indicate that we are going into standby mode
 if not usb_connected:
@@ -44,21 +57,22 @@ In this state the GPIO pins go high impedance, so the MOSFET remains off by virt
 
 Unfortunately this is inadequate for devices using the I2C bus or using its pins as GPIO. This is because
 the Pyboard has pullup resistors on these pins which will source current into the connected hardware
-even when the latter is powered down. There are two possible solutions. The first is to provide switches in
-series with the relevant GPIO pins. The second is to switch both Vdd and Vss of the connected hardware. I
-have adopted the former approach. The current consumed by the connected hardware when the Pyboard is in
-standby is then negligible compared to the total current draw of 29uA. This (from datasheet values) comprises
-4uA for the microprocessor and 25uA for the LDO regulator.
+even when the latter is powered down. There are two obvious solutions. The first is to switch Vdd as in the
+above schematic (single-ended mode) and also to provide switches in series with the relevant GPIO pins. The second is to
+switch both Vdd and Vss of the connected hardware (double-ended mode). I prefer the single ended approach.
+The current consumed by the connected hardware when the Pyboard is in standby is then negligible compared to
+the total current draw of 29uA. This (from datasheet values) comprises 4uA for the microprocessor and 25uA
+for the LDO regulator.
 
 This can be reduced further by disabling or removing the LDO regulator: I have measured 7uA offering the
 possibility of a year's operation from a CR2032 button cell. In practice achieving this is dependent on the
 frequency and duration of power up events.
 
-# Design details
+## Design details
 
-This uses two Pyboard pins to control the peripheral power and the pullup resistors. Separate control is
-best because it enables devices to be powered off prior to disabling the pullups, which is
-preferable for some peripherals. An analog switch is employed to disable the pullup resistors.
+The design uses two Pyboard pins to control the peripheral power and the pullup resistors. Separate control is
+preferable because it enables devices to be powered off prior to disabling the pullups, which is
+reccommended for some peripherals. An analog switch is employed to disable the pullup resistors.
 
 Resistors R3, R4 and capacitor C1 are optional and provide the facility for a switched filtered,
 slew rate limited 3.3V output. This was initially provided for ferroelectric RAM (FRAM)
@@ -72,13 +86,53 @@ An editable version, with a PCB designed to simplify connectivity to the epaper 
 devices including the NRF24L01 radio, is provided in the file epd_vddonly.fzz - this requires the free
 (as in beer) software from [Fritzing](http://fritzing.org/home/) where copies of the PCB can be ordered.
  
+## Driver
+
+This is generalised to provide for the use of alternative hardware. If two pins are specified it assumes
+the active high pin controls the pullups with the active low one controlling power as above. If a
+single pin is specified it is assumed to control both.
+
+```python
+import pyb
+class PowerController(object):
+    def __init__(self, pin_active_high, pin_active_low):
+        if pin_active_low is not None:          # Start with power down
+            self.al = pyb.Pin(pin_active_low, mode = pyb.Pin.OUT_PP)
+            self.al.high()
+        else:
+            self.al = None
+        if pin_active_high is not None:         # and pullups disabled
+            self.ah = pyb.Pin(pin_active_high, mode = pyb.Pin.OUT_PP)
+            self.ah.low()
+        else:
+            self.ah = None
+
+    def power_up(self):
+        if self.ah is not None:
+            self.ah.high()                      # Enable I2C pullups
+        if self.al is not None:
+            self.al.low()                       # Power up
+        pyb.delay(10)                           # Nominal time for device to settle
+
+    def power_down(self):
+        if self.al is not None:
+            self.al.high()                      # Power off
+        pyb.delay(10)                           # Avoid glitches on I2C bus while power decays
+        if self.ah is not None:
+            self.ah.low()                       # Disable I2C pullups
+
+    @property
+    def single_ended(self):
+        return (self.ah is not None) and (self.al is not None)
+```
+
 # Pyboard modification
  
 For the very lowest power consumption the LDO regulator should be removed from the Pyboard. Doing this
 will doubtless void your warranty and commits you to providing a 3.3V power supply even when connecting
 to the Pyboard with USB. The regulator is the rectangular component with five leads located near the
 X3 pins [here](http://micropython.org/static/resources/pybv10-pinout.jpg).
- 
+
 # Some numbers
  
 With the regulator removed the Pyboard consumes about 7uA. In a year of operation this corrsponds to
@@ -123,7 +177,7 @@ else:
     pyb.standby()
 ```
 
-Modules from [here](https://github.com/peterhinch/micropython-epaper.git).
+Modules epaper and micropower located [here](https://github.com/peterhinch/micropython-epaper.git).
 
 This used an average of 85mA for 6S to do an update. If the script performed one refresh per hour this would equate
 to 85*6/3600 = 141uA average + 7uA quiescent = 148uA. This would exhaust a CR2032 in 9 weeks. An alternative is the
@@ -136,9 +190,8 @@ Power = 141uA + 29uA quiescent = 170uA * 24 * 365 = 1.5AH which is within the no
 
 # Pyboard enhancements
 
-Micropower operation would be made more straightforward if a future iteration of the Pyboard included the following,
+Micropower operation would be simpler if a future iteration of the Pyboard included the following,
 controllable in user code:  
  1. A switched 3.3V peripheral power output.  
  2. A facility to disable the I2C pullups.  
  3. A facility to disable the regulator via its enable pin.
-
