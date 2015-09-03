@@ -14,7 +14,7 @@ reads some data from a sensor then returns to standby. At intervals it uses an N
 accumulated data to a remote host. The second is a remote display using the NRF24L01 to acquire data from
 a remote host and an e-paper display to enable this to be presented when the Pyboard is in standby. In
 either case the Pyboard might be battery powered or powered from a power constrained source such as solar
-voltaic cells.
+photovoltaic cells.
 
 ## Standby mode
 
@@ -70,21 +70,25 @@ frequency and duration of power up events.
 
 ## Design details
 
+The following design provides for single ended switching as described above and also - by virtue of a PCB
+design - simplifies the connection of the Pyboard to an e-paper display and the NRF24L01. Connections
+are provided for other I2C devices namely ferroelectric RAM (FRAM) [modules](https://learn.adafruit.com/adafruit-i2c-fram-breakout)
+and the BMP180 pressure sensor although these pins may readily be employed for other I2C modules.
+
 The design uses two Pyboard pins to control the peripheral power and the pullup resistors. Separate control is
 preferable because it enables devices to be powered off prior to disabling the pullups, which is
 recommended for some peripherals. An analog switch is employed to disable the pullup resistors.
 
 Resistors R3, R4 and capacitor C1 are optional and provide the facility for a switched filtered,
-slew rate limited 3.3V output. This was initially provided for ferroelectric RAM (FRAM)
-[modules](https://learn.adafruit.com/adafruit-i2c-fram-breakout) which specify a minimum and maximum
+slew rate limited 3.3V output. This was initially provided for the FRAM modules which specify a minimum and maximum
 slew rate: for these fit R3 and R4. In this instance C1 may be omitted as the modules have a 10uF capacitor
 onboard.
 
 ![Schematic](epd_vddonly_schem.jpg)
 
-An editable version, with a PCB designed to simplify connectivity to the epaper display and other
-devices including the NRF24L01 radio, is provided in the file epd_vddonly.fzz - this requires the free
-(as in beer) software from [Fritzing](http://fritzing.org/home/) where copies of the PCB can be ordered.
+An editable version is provided in the file epd_vddonly.fzz - this requires the free (as in beer) software
+from [Fritzing](http://fritzing.org/home/) where PCB's can be ordered. I should add a caveat that
+at the time of writing the circuit has been tested but the PCB layout has not.
  
 ## Driver
 
@@ -96,12 +100,12 @@ single pin is specified it is assumed to control both.
 import pyb
 class PowerController(object):
     def __init__(self, pin_active_high, pin_active_low):
-        if pin_active_low is not None:          # Start with power down
+        if pin_active_low is not None:    # Start with power down
             self.al = pyb.Pin(pin_active_low, mode = pyb.Pin.OUT_PP)
             self.al.high()
         else:
             self.al = None
-        if pin_active_high is not None:         # and pullups disabled
+        if pin_active_high is not None:   # and pullups disabled
             self.ah = pyb.Pin(pin_active_high, mode = pyb.Pin.OUT_PP)
             self.ah.low()
         else:
@@ -109,20 +113,20 @@ class PowerController(object):
 
     def power_up(self):
         if self.ah is not None:
-            self.ah.high()                      # Enable I2C pullups
+            self.ah.high()                # Enable I2C pullups
         if self.al is not None:
-            self.al.low()                       # Power up
-        pyb.delay(10)                           # Nominal time for device to settle
+            self.al.low()                 # Power up
+        pyb.delay(10)                     # Nominal time for device to settle
 
     def power_down(self):
         if self.al is not None:
-            self.al.high()                      # Power off
-        pyb.delay(10)                           # Avoid glitches on I2C bus while power decays
+            self.al.high()                # Power off
+        pyb.delay(10)                     # Avoid glitches on I2C bus while power decays
         if self.ah is not None:
-            self.ah.low()                       # Disable I2C pullups
+            self.ah.low()                 # Disable I2C pullups
 
     @property
-    def single_ended(self):
+    def single_ended(self):               # Pullups have separate control
         return (self.ah is not None) and (self.al is not None)
 ```
 
@@ -132,6 +136,8 @@ For the very lowest power consumption the LDO regulator should be removed from t
 will doubtless void your warranty and commits you to providing a 3.3V power supply even when connecting
 to the Pyboard with USB. The regulator is the rectangular component with five leads located near the
 X3 pins [here](http://micropython.org/static/resources/pybv10-pinout.jpg).
+
+A more readily reversible alternative to removal is to lift pin 3 and link it to gnd.
 
 # Some numbers
  
@@ -182,11 +188,11 @@ Modules epaper and micropower located [here](https://github.com/peterhinch/micro
 
 This used an average of 85mA for 6S to do an update. If the script performed one refresh per hour this would equate
 to  
-85x6/3600 = 141uA average + 7uA quiescent = 148uA. This would exhaust a CR2032 in 9 weeks. An alternative is the
+85 x 6/3600 = 141uA average + 7uA quiescent = 148uA. This would exhaust a CR2032 in 9 weeks. An alternative is the
 larger CR2450 button cell with 540mAH capacity which would provide 5 months running.
 
 A year's running would be achievable if the circuit were powered from three AA alkaline cells - obviously the
-regulator would be retained in this instance:
+regulator would be required in this instance:
 
 Power = 141uA + 29uA quiescent = 170uA x 24 x 365 = 1.5AH which is within the nominal capacity of these cells.
 
