@@ -87,13 +87,12 @@ onboard.
 ![Schematic](epd_vddonly_schem.jpg)
 
 An editable version is provided in the file epd_vddonly.fzz - this requires the free (as in beer) software
-from [Fritzing](http://fritzing.org/home/) where PCB's can be ordered. I should add a caveat that
-at the time of writing the circuit has been tested but the PCB layout has not.
+from [Fritzing](http://fritzing.org/home/) where PCB's can be ordered.
  
 ## Driver
 
 This is generalised to provide for the use of alternative hardware. If two pins are specified it assumes
-that the active high pin controls the pullups and the active low one controls power as above. If a
+that the active high pin controls the pullups and the active low pin controls power as above. If a
 single pin is specified it is assumed to control both.
 
 ```python
@@ -119,6 +118,8 @@ class PowerController(object):
         pyb.delay(10)                     # Nominal time for device to settle
 
     def power_down(self):
+        for bus in (pyb.SPI(1), pyb.SPI(2), pyb.I2C(1), pyb.I2C(2)):
+            bus.deinit()                  # Extend to any other buses in use
         if self.al is not None:
             self.al.high()                # Power off
         pyb.delay(10)                     # Avoid glitches on I2C bus while power decays
@@ -129,6 +130,7 @@ class PowerController(object):
     def single_ended(self):               # Pullups have separate control
         return (self.ah is not None) and (self.al is not None)
 ```
+A driver with extra features can be found in the file micropower.py
 
 # Pyboard modification
  
