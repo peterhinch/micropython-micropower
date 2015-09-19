@@ -1,6 +1,6 @@
 # micropower.py Support for hardware capable of switching off the power for Pyboard peripherals
-# 28th Aug 2015
-# version 0.45
+# 19th Sept 2015
+# version 0.5
 
 # Copyright 2015 Peter Hinch
 #
@@ -19,8 +19,8 @@ import pyb
 
 class PowerController(object):
     def __init__(self, pin_active_high, pin_active_low):
-        self.upcount = 0
-        if pin_active_low is not None:          # Start with power down
+        self.upcount = 0                        # Start with power down
+        if pin_active_low is not None:
             self.al = pyb.Pin(pin_active_low, mode = pyb.Pin.OUT_PP)
             self.al.high()
         else:
@@ -30,6 +30,11 @@ class PowerController(object):
             self.ah.low()
         else:
             self.ah = None
+        self._deinit()
+
+    def _deinit(self):
+        for bus in (pyb.SPI(1), pyb.SPI(2), pyb.I2C(1), pyb.I2C(2)):
+            bus.deinit()                        # I2C drivers seem to need this
 
     def power_up(self):
         self.upcount += 1                       # Cope with nested calls
@@ -50,8 +55,7 @@ class PowerController(object):
             pyb.delay(10)                       # Avoid glitches on switched
             if self.ah is not None:             # I2C bus while power decays
                 self.ah.low()                   # Disable I2C pullups
-        for bus in (pyb.SPI(1), pyb.SPI(2), pyb.I2C(1), pyb.I2C(2)):
-            bus.deinit()                        # I2C drivers seem to need this
+        self._deinit()
 
     @property
     def single_ended(self):
