@@ -130,7 +130,19 @@ class PowerController(object):
     def single_ended(self):               # Pullups have separate control
         return (self.ah is not None) and (self.al is not None)
 ```
-A driver with extra features can be found in the file micropower.py
+
+A driver with extra features can be found in the file micropower.py and may be used at the REPL using
+the ``power_up()`` and ``power_down()` methods or in code, optionally as a context manager:
+
+```python
+from micropower import PowerController as pc
+p = pc(pin_active_high = 'Y12', pin_active_low = 'Y11')
+with p:
+    f = FRAM(side = 'R')    # Instantiate the hardware under power control
+    pyb.mount(f, '/fram')   # Use it
+    os.listdir('/fram')
+    pyb.mount(None, '/fram')# Perform any tidying up
+```
 
 # Pyboard modification
  
