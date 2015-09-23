@@ -232,6 +232,30 @@ the regulator would be required in this instance:
 Power = 141uA + 29uA quiescent = 170uA x 24 x 365 = 1.5AH which is within the nominal capacity of
 these cells.
 
+# A coding tip
+
+When coding for minimum power consumption there are various options. One is to reduce the CPU
+clock speed: its current draw in normal running mode is roughly proportional to clock speed. However
+in computationally intensive tasks the total energy drawn from a battery may not be reduced since
+processing time will double if the clock rate is halved. This is a consequence of the way CMOS
+logic works: gates use a fixed amount of energy per transition.
+
+If your code spends time waiting on ``pyb.delay()`` reducing clock rate will help. But also
+consider this low power alternative to ``pyb.delay()``.
+
+```python
+def lpdelay(ms):
+    rtc.wakeup(ms)
+    pyb.stop()
+    rtc.wakeup(None)
+```
+
+This reduces current consumption for the duration of the delay from 20mA to 500uA. Clearly it
+assumes that the rtc can be dedicated to this task. This opens up an idea for a project: a
+cooperative scheduler based on microthreading and using the rtc to schedule threads. This would
+be for continuously running low power systems rather than ones using ``pyb.standby()`` and would
+imply a current draw of 500uA while idle.
+
 # Pyboard enhancements
 
 Micropower operation would be simpler if a future iteration of the Pyboard included the following,
