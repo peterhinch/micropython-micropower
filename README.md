@@ -354,6 +354,12 @@ class RTC_Regs(object):
 
 Register zero appears to be used by the firmware and may be best avoided.
 
+# Hardware
+
+Hardware as used for the above tests.
+
+![Hardware](hardware.JPG)
+
 # Pyboard enhancements
 
 Micropower operation would be simpler if a future iteration of the Pyboard included the following,
