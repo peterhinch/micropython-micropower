@@ -175,16 +175,94 @@ diode linking its Vout pin to Vin.
 
 # Some numbers
  
-With the regulator non-operational the Pyboard consumes about 7uA. In a year's running this corrsponds to
-an energy utilisation of 61mAH, compared to the 225mAH nominal capacity of a CR2032 cell.
+After executing ``pyb.standby()`` and with the regulator non-operational the Pyboard consumes about 7uA.
+In a year's running this corrsponds to an energy utilisation of 61mAH, compared to the 225mAH nominal
+capacity of a CR2032 cell. With the regulator running, the current of 30uA corresponds to 260mAH per annum.
  
 @moose measured the startup charge required by the Pyboard [here](http://forum.micropython.org/viewtopic.php?f=6&t=607).
 This corresponds to about 9mAS or 0.0025mAH. If we start every ten minutes, annual consumption from
 startup events is  
 0.0025 x 6 x 24 x 365 = 131mAH. Adding the 61mAH from standby gives 192mAH, close to the
 capacity of the cell. This sets an upper bound on the frequency of power up events to achieve the notional
-one year runtime, although this could be doubled with an alternative button cell (see below).
- 
+one year runtime, although this could be doubled with an alternative button cell (see below). Two use cases,
+where the Pyboard performs a task on waking up, are studied below.
+
+## Use case 1: reading a sensor and transmitting the data
+
+This was tested by reading a BMP180 pressure sensor and transmitting the data to a base station using
+an NRF24L01 radio, both with power switched. The current waveform (red trace, 40mA/div, 100mS/div) is
+shown below. The yellow trace shows the switched Vdd supply. Note the spike in the current waveform
+when Vdd switches on: this is caused by the charging of decoupling capacitors on the attached peripherals.
+
+![Waveform](current.png)
+
+On my estimate the energy used each time the Pyboard wakes from standby is about 23mA seconds (comprising
+some 16mA S to boot up and 7mA S to read and transmit the data). If this ran once per hour the annual
+energy use would be 23 x 24 x 365/3600 mAH = 56mAH to which must be added the standby figure of 61mAH or
+260mAH depending on whether the regulator is employed. One year's use with a CR2032 would seem feasible
+with the regulator disabled.
+
+The code is listed to indicate the approach used, however it's incomplete as the slave end of the link and
+the ``radio`` module are missing.
+
+```python
+import struct, pyb, stm
+from radio import TwoWayRadio, RadioSetup
+from micropower import PowerController
+from bmp180 import BMP180
+
+RadioSetup['ce_pin'] = 'X4'
+ledy = pyb.LED(3)
+
+def send_data():
+    bmp180 = BMP180('Y')
+    pressure = int(bmp180.pressure /100)
+    nrf = TwoWayRadio(master = True, **RadioSetup)
+    led_state = stm.mem32[stm.RTC + stm.RTC_BKP3R]
+    led_state = max(1, (led_state << 1) & 0x0f)
+    stm.mem32[stm.RTC + stm.RTC_BKP3R] = led_state
+    # stop listening and send packet
+    nrf.stop_listening()
+    try:
+        nrf.send(struct.pack('ii', pressure, led_state))
+    except OSError:  # never happens
+        pass
+    nrf.start_listening()
+    # wait for response, with 250ms timeout
+    start_time = pyb.millis()
+    timeout = False
+    while not nrf.any() and not timeout:
+        if pyb.elapsed_millis(start_time) > 250:
+            timeout = True
+    if timeout:
+        ledy.on()
+        pyb.delay(200) # get to see it before power goes down
+        ledy.off()
+    else:
+        nrf.recv() # discard received data
+
+rtc = pyb.RTC()
+
+usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+if not usb_connected:
+    pyb.usb_mode(None) # Save power
+
+if stm.mem32[stm.RTC + stm.RTC_BKP1R] == 0:     # first boot
+    rtc.datetime((2015, 8, 6, 4, 13, 0, 0, 0)) # Arbitrary
+
+p = PowerController(pin_active_high = 'Y12', pin_active_low = 'Y11')
+with p:
+    send_data()
+rtc.wakeup(4000)
+stm.mem32[stm.RTC + stm.RTC_BKP1R] = 1 # indicate that we are going into standby mode
+if usb_connected:
+    p.power_up()                        # Power up for testing
+else:
+    pyb.standby()
+```
+
+## Use case 2: Displaying data on an e-paper screen
+
 A more computationally demanding test involved updating an epaper display with the following script
  
 ```python
@@ -232,7 +310,9 @@ the regulator would be required in this instance:
 Power = 141uA + 29uA quiescent = 170uA x 24 x 365 = 1.5AH which is within the nominal capacity of
 these cells.
 
-# A coding tip
+# Coding tips
+
+## CPU clock speed
 
 When coding for minimum power consumption there are various options. One is to reduce the CPU
 clock speed: its current draw in normal running mode is roughly proportional to clock speed. However
@@ -255,6 +335,24 @@ assumes that the rtc can be dedicated to this task. This opens up an idea for a 
 cooperative scheduler based on microthreading and using the rtc to schedule threads. This would
 be for continuously running low power systems rather than ones using ``pyb.standby()`` and would
 imply a current draw of 500uA while idle.
+
+## RTC Backup registers
+
+The real time clock supports 20 32-bit backup registers whose contents are maintained when in any
+of the low power modes. These may be accessed as an array as follows:
+
+```python
+import stm
+class RTC_Regs(object):
+    def __getitem__(self, idx):
+        assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
+        return stm.mem32[stm.RTC + stm.RTC_BKP0R+ idx * 4]
+    def __setitem__(self, idx, val):
+        assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
+        stm.mem32[stm.RTC + stm.RTC_BKP0R + idx * 4] = val
+```
+
+Register zero appears to be used by the firmware and may be best avoided.
 
 # Pyboard enhancements
 
