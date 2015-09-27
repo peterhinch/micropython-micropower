@@ -3,7 +3,7 @@ Some ideas for building ultra low power systems based on the Pyboard
 
 # Abstract
 
-These notes describe some general points in achieving minimum power draw from Pyboard based systems. A
+These notes describe some issues involved in minimising power draw in Pyboard based systems. A
 circuit design and PCB layout are offered for achieving this when the Pyboard is used with external chips
 or modules; it was specifically designed for the e-paper display and the NRF24L01 radio, but it could
 readily be used with other devices. Some calculations are presented suggesting limits to the runtimes
@@ -24,7 +24,10 @@ photovoltaic cells.
 
 To achieve minimum power the code must be deigned so that the Pyboard spends the majority of its time in
 standby mode. In this mode the current drawn by the MPU drops to some 4uA. The Pyboard draws about
-30uA largely owing to the onboard LDO voltage regulator which cannot (without surgery) be disabled. A
+30uA largely owing to the onboard LDO voltage regulator which cannot (without surgery) be disabled. Note that
+on recovery from standby the code will be loaded and run from the start: program state is not retained, although
+limited state information can be retained in the RTC backup registers, one of which is used below to detect
+whether the program has run because of an initial power up or in response to an RTC interrupt. A
 typical application will use code along these lines:
 
 ```python
@@ -48,18 +51,26 @@ if not usb_connected:
 The ``usb_connected`` logic simplifies debugging using a USB cable while minimising power when run without USB. The
 first boot detection is a potentially useful convenience.
 
-## Nonvolatile memory
+## Nonvolatile memory (storage in standby)
 
-To obtain the 30uA current it is necessary to use the internal flash memory rather than an SD card as the
-latter draw significant standby current. The value varies with manufacturer but tends to dwarf the current
-of the Pyboard - 200uA is common. This raises the issue of endurance if data is to be stored each time
-power goes down. The Flash is rated at 10,000 writes, a figure which is approached in a year even if the
-Pyboard only wakes hourly.
+To obtain the 30uA current it is necessary to use the internal flash memory for program storage rather than
+an SD card as SD cards draw significant standby current. The value varies with manufacturer but tends to dwarf
+the current draw of the Pyboard - 200uA is common. 
+
+Some applications will require data to be retained while the Pyboard is in standby. Very small amounts may
+be stored in the RTC backup registers (see below). Another option is to use files in the internal flash, but
+this raises the issue of endurance. The Flash is rated at 10,000 writes, a figure which is approached in a year
+even if the Pyboard only wakes hourly.
 
 A solution for small amounts of data is to use FRAM (ferroelectric RAM) which has extremely high
 endurance and low power consumption. With the hardware described below the standby current is effectively
 zero. A driver for FRAM may be found [here](https://github.com/peterhinch/micropython-fram.git) which
 also details a source for the modules.
+
+Larger volumes of data could be stored in an SD card whose power can be controlled as required: the Pyboard
+has an sdcard driver enabling a card in an SPI adapter to be mounted in the filesystem. While lacking the
+extreme endurance of FRAM it should offer an effective solution in most applications, with power switching
+overcoming the limitation of the inbuilt SD card connector.
 
 # Hardware issues
 
@@ -118,7 +129,7 @@ The driver supports a single class ``PowerController``
 ### Methods
 
 ``PowerController()`` The constructor has two arguments being strings represnting Pyboard pins. If either
-is ``None`` a double ended controller is assumed
+is ``None`` a double ended controller is assumed. Arguments:
  1. ``pin_active_high`` Driven high in response to ``power_up()``. In single ended mode, powers I2C pullups.
  2. ``pin_active_low`` Driven low in response to ``power_up()``. In single ended mode powers peripherals.
 
@@ -139,7 +150,7 @@ with p:
 ```
 
 Note that when peripheral is powered up it is usually necessary to create a device instance as shown
-above. Typical device drivers use the constructor to initialise the hardware, so you can;t rely on
+above. Typical device drivers use the constructor to initialise the hardware, so you can't rely on
 a device instance persisting in a usable form after a power down event.
 
 The ``power_up()`` and ``power_down()`` methods support nested calls, with power only being removed
@@ -156,7 +167,7 @@ The Pyboard I2C bus driver doesn't respond well to the following sequence of eve
 
 It is necessary to de-initialise the bus prior to re-initialising it. In principle this could be done
 in the device constructor. However existing drivers are unlikely to do this. Consequently the
-``PowerController`` does this on power down. I don't know of a similar issue with SPI, but it
+``PowerController`` does this on power down. I don't know of a similar issue with SPI, but the driver
 de-initialises this on a precautionary basis.
 
 # Pyboard modification
@@ -169,7 +180,7 @@ X3 pins [here](http://micropython.org/static/resources/pybv10-pinout.jpg).
 A more readily reversible alternative to removal is to lift pin 3 (the pin on the bottom row nearest
 to X3 on the above diagram) and link it to gnd.
 
-Note that with the regulator operational the Pyboard can be powered by applying 3.3V to its 3V3 pin.
+Note that even with the regulator operational the Pyboard can be powered by applying 3.3V to its 3V3 pin.
 There is little point in doing so as the regulator continues to draw current by virtue of an internal
 diode linking its Vout pin to Vin.
 
@@ -191,19 +202,19 @@ where the Pyboard performs a task on waking up, are studied below.
 
 This was tested by reading a BMP180 pressure sensor and transmitting the data to a base station using
 an NRF24L01 radio, both with power switched. The current waveform (red trace, 40mA/div, 100mS/div) is
-shown below. The yellow trace shows the switched Vdd supply. Note the spike in the current waveform
+shown below. The yellow trace shows the switched Vdd supply. Note the 300mA spike in the current waveform
 when Vdd switches on: this is caused by the charging of decoupling capacitors on the attached peripherals.
 
 ![Waveform](current.png)
 
 On my estimate the energy used each time the Pyboard wakes from standby is about 23mA seconds (comprising
-some 16mA S to boot up and 7mA S to read and transmit the data). If this ran once per hour the annual
+some 16mAS to boot up and 7mAS to read and transmit the data). If this ran once per hour the annual
 energy use would be 23 x 24 x 365/3600 mAH = 56mAH to which must be added the standby figure of 61mAH or
 260mAH depending on whether the regulator is employed. One year's use with a CR2032 would seem feasible
 with the regulator disabled.
 
-The code is listed to indicate the approach used, however it's incomplete as the slave end of the link and
-the ``radio`` module are missing.
+The code is listed to indicate the approach used and to clarify my observations on energy usage.
+It is incomplete as I have not documented the slave end of the link or the ``radio`` module.
 
 ```python
 import struct, pyb, stm
@@ -261,6 +272,12 @@ else:
     pyb.standby()
 ```
 
+A comparison of the current waveform presented above with that recorded by @moose shows virtually identical
+behaviour for the first 180mS as the Pyboard boots up. There is then a period of some 230mS until power is
+applied to the peripherals where the board continues to draw some 60mA: compilation of imported modules
+to byte code is likely to be responsible for the bulk of this energy usage. The code which performs the power
+control and the reading and transmission of data is responsible for about a third of the total energy use.
+
 ## Use case 2: Displaying data on an e-paper screen
 
 A more computationally demanding test involved updating an epaper display with the following script
@@ -298,8 +315,8 @@ else:
 
 Modules epaper and micropower located [here](https://github.com/peterhinch/micropython-epaper.git).
 
-This used an average of 85mA for 6S to do an update. If the script performed one refresh per hour
-this would equate to  
+This used an average of 85mA for 6S to do an update. Based on a disabled regulator, if the script
+performed one refresh per hour this would equate to  
 85 x 6/3600 = 141uA average + 7uA quiescent = 148uA. This would exhaust a CR2032 in 9 weeks. An
 alternative is the larger CR2450 button cell with 540mAH capacity which would provide 5 months
 running.
@@ -339,7 +356,7 @@ imply a current draw of 500uA while idle.
 ## RTC Backup registers
 
 The real time clock supports 20 32-bit backup registers whose contents are maintained when in any
-of the low power modes. These may be accessed as an array as follows:
+of the low power modes. These may be accessed as an integer array as follows:
 
 ```python
 import stm
@@ -352,7 +369,7 @@ class RTC_Regs(object):
         stm.mem32[stm.RTC + stm.RTC_BKP0R + idx * 4] = val
 ```
 
-Register zero appears to be used by the firmware and may be best avoided.
+Register zero is used by the firmware and should be avoided.
 
 # Hardware
 
