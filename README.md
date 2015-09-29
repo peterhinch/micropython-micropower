@@ -9,6 +9,10 @@ or modules; it was specifically designed for the e-paper display and the NRF24L0
 readily be used with other devices. Some calculations are presented suggesting limits to the runtimes
 that might be achieved from various types of batteries.
 
+The power overheads of the Pyboard are discussed and measurements presented. These overheads comprise the
+consumption of the voltage regulator and the charge required to recover from standby and to load and compile
+typical application code.
+
 Finally a suggestion is offered for an enhancement to a future Pyboard version.
 
 ## Use cases
@@ -185,9 +189,14 @@ There is little point in doing so as the regulator continues to draw current by 
 diode linking its Vout pin to Vin.
 
 # Some numbers
+
+The capacity of small batteries is measured in milliamp hours (mAH), a measure of electric charge. For
+purposes of measurement on the Pyboard this is rather a large unit, and milliamp seconds (mAS) is used here.
+1mAH = 3600mAS. Note that, because the Pyboard uses a linear voltage regulator, the amount of current
+(and hence charge) used in any situation is substantially independent of battery voltage.
  
 After executing ``pyb.standby()`` and with the regulator non-operational the Pyboard consumes about 7uA.
-In a year's running this corrsponds to an energy utilisation of 61mAH, compared to the 225mAH nominal
+In a year's running this corrsponds to an charge utilisation of 61mAH, compared to the 225mAH nominal
 capacity of a CR2032 cell. With the regulator running, the current of 30uA corresponds to 260mAH per annum.
  
 @moose measured the startup charge required by the Pyboard [here](http://forum.micropython.org/viewtopic.php?f=6&t=607).
@@ -207,13 +216,13 @@ when Vdd switches on: this is caused by the charging of decoupling capacitors on
 
 ![Waveform](current.png)
 
-On my estimate the energy used each time the Pyboard wakes from standby is about 23mA seconds (comprising
+On my estimate the charge used each time the Pyboard wakes from standby is about 23mAS (comprising
 some 16mAS to boot up and 7mAS to read and transmit the data). If this ran once per hour the annual
-energy use would be 23 x 24 x 365/3600 mAH = 56mAH to which must be added the standby figure of 61mAH or
+charge use would be 23 x 24 x 365/3600 mAH = 56mAH to which must be added the standby figure of 61mAH or
 260mAH depending on whether the regulator is employed. One year's use with a CR2032 would seem feasible
 with the regulator disabled.
 
-The code is listed to indicate the approach used and to clarify my observations on energy usage.
+The code is listed to indicate the approach used and to clarify my observations on charge usage.
 It is incomplete as I have not documented the slave end of the link or the ``radio`` module.
 
 ```python
@@ -272,11 +281,12 @@ else:
     pyb.standby()
 ```
 
-A comparison of the current waveform presented above with that recorded by @moose shows virtually identical
-behaviour for the first 180mS as the Pyboard boots up. There is then a period of some 230mS until power is
-applied to the peripherals where the board continues to draw some 60mA: compilation of imported modules
-to byte code is likely to be responsible for the bulk of this energy usage. The code which performs the power
-control and the reading and transmission of data is responsible for about a third of the total energy use.
+Measurements were performed with the slave nearby so that timeouts never occurred. A comparison of the current
+waveform presented above with that recorded by @moose shows virtually identicalbehaviour for the first 180mS as
+the Pyboard boots up. There is then a period of some 230mS until power is applied to the peripherals where
+the board continues to draw some 60mA: compilation of imported modules to byte code is likely to be responsible
+for the bulk of this charge usage. The code which performs the actual application - namely power control and
+the reading and transmission of data is responsible for about a third of the total charge use.
 
 ## Use case 2: Displaying data on an e-paper screen
 
@@ -321,8 +331,8 @@ performed one refresh per hour this would equate to
 alternative is the larger CR2450 button cell with 540mAH capacity which would provide 5 months
 running.
 
-A year's running would be achievable if the circuit were powered from three AA alkaline cells - obviously
-the regulator would be required in this instance:
+A year's running would be achievable if the circuit were powered from three AA alkaline cells - owing
+to the 4.5V nominal output the regulator would be required in this instance:
 
 Power = 141uA + 29uA quiescent = 170uA x 24 x 365 = 1.5AH which is within the nominal capacity of
 these cells.
@@ -333,9 +343,9 @@ these cells.
 
 When coding for minimum power consumption there are various options. One is to reduce the CPU
 clock speed: its current draw in normal running mode is roughly proportional to clock speed. However
-in computationally intensive tasks the total energy drawn from a battery may not be reduced since
+in computationally intensive tasks the total charge drawn from a battery may not be reduced since
 processing time will double if the clock rate is halved. This is a consequence of the way CMOS
-logic works: gates use a fixed amount of energy per transition.
+logic works: gates use a fixed amount of charge per transition.
 
 If your code spends time waiting on ``pyb.delay()`` reducing clock rate will help. But also
 consider this low power alternative to ``pyb.delay()``.
