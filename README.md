@@ -29,8 +29,8 @@ photovoltaic cells.
 To achieve minimum power the code must be deigned so that the Pyboard spends the majority of its time in
 standby mode. In this mode the current drawn by the MPU drops to some 4uA. The Pyboard draws about
 30uA largely owing to the onboard LDO voltage regulator which cannot (without surgery) be disabled. Note that
-on recovery from standby the code will be loaded and run from the start: program state is not retained, although
-limited state information can be retained in the RTC backup registers, one of which is used below to detect
+on recovery from standby the code will be loaded and run from the start: program state is not retained.
+Limited state information can be retained in the RTC backup registers: in the example below one is used to detect
 whether the program has run because of an initial power up or in response to an RTC interrupt. A
 typical application will use code along these lines:
 
@@ -55,16 +55,19 @@ if not usb_connected:
 The ``usb_connected`` logic simplifies debugging using a USB cable while minimising power when run without USB. The
 first boot detection is a potentially useful convenience.
 
-## Nonvolatile memory (storage in standby)
+## Nonvolatile memory and storage in standby
 
 To obtain the 30uA current it is necessary to use the internal flash memory for program storage rather than
 an SD card as SD cards draw significant standby current. The value varies with manufacturer but tends to dwarf
 the current draw of the Pyboard - 200uA is common. 
 
 Some applications will require data to be retained while the Pyboard is in standby. Very small amounts may
-be stored in the RTC backup registers (see below). Another option is to use files in the internal flash, but
-this raises the issue of endurance. The Flash is rated at 10,000 writes, a figure which is approached in a year
-even if the Pyboard only wakes hourly.
+be stored in the RTC backup registers. The Pyboard also has 4KB of backup RAM which is more flexible and also
+retains data in standby. Code for using these options is provided below.
+
+In systems requiring true nonvolatile storage where data is retained after power loss as well as during standby
+one option is to use files in the internal flash, but this raises the issue of endurance. The Flash is rated at
+10,000 writes, a figure which is approached in a year even if the Pyboard only wakes and writes to it hourly.
 
 A solution for small amounts of data is to use FRAM (ferroelectric RAM) which has extremely high
 endurance and low power consumption. With the hardware described below the standby current is effectively
@@ -74,7 +77,7 @@ also details a source for the modules.
 Larger volumes of data could be stored in an SD card whose power can be controlled as required: the Pyboard
 has an sdcard driver enabling a card in an SPI adapter to be mounted in the filesystem. While lacking the
 extreme endurance of FRAM it should offer an effective solution in most applications, with power switching
-overcoming the limitation of the inbuilt SD card connector.
+overcoming the "always on" limitation of the inbuilt SD card connector.
 
 # Hardware issues
 
@@ -339,6 +342,9 @@ these cells.
 
 # Coding tips
 
+The code below includes ways of accessing features not supported by the firmware at the time of writing.
+Check for official support before using.
+
 ## CPU clock speed
 
 When coding for minimum power consumption there are various options. One is to reduce the CPU
@@ -379,7 +385,38 @@ class RTC_Regs(object):
         stm.mem32[stm.RTC + stm.RTC_BKP0R + idx * 4] = val
 ```
 
-Register zero is used by the firmware and should be avoided.
+Register zero is used by the firmware and should be avoided. Other registers are initialised to
+zero after power up.
+
+## Backup RAM
+
+The following class enables this on chip 4KB of RAM to be accessed as an array of integers or as a
+bytearray. The latter supports the buffer protocol which offers considerable flexbility in its use.
+Like all RAM its initial contents after power up are arbitrary.
+
+```python
+import stm, uctypes
+class BkpRAM(object):
+    BKPSRAM = 0x40024000
+    def __init__(self):
+      stm.mem32[stm.RCC + stm.RCC_APB1ENR] |= 0x10000000 # PWREN bit
+      stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100 # Set the DBP bit in the PWR power control register
+      stm.mem32[stm.RCC +stm.RCC_AHB1ENR]|= 0x40000 # enable BKPSRAMEN
+      stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup register enable bit
+    def __getitem__(self, idx):
+        assert idx >= 0 and idx <= 0x3ff, "Index must be between 0 and 1023"
+        return stm.mem32[self.BKPSRAM + idx * 4]
+    def __setitem__(self, idx, val):
+        assert idx >= 0 and idx <= 0x3ff, "Index must be between 0 and 1023"
+        stm.mem32[self.BKPSRAM + idx * 4] = val
+    def get_bytearray(self):
+        return uctypes.bytearray_at(self.BKPSRAM, 4096)
+
+bram = BkpRAM() # Create the RAM object (after each recovery from standby)
+bram[0] = 22 # use as integer array
+ba = bram.get_bytearray()
+ba[4] = 0 # or as a bytearray
+```
 
 # Hardware
 
