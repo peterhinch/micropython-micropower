@@ -13,6 +13,9 @@ The power overheads of the Pyboard are discussed and measurements presented. The
 consumption of the voltage regulator and the charge required to recover from standby and to load and compile
 typical application code.
 
+A module ``upower.py`` is provided giving access to features useful in low power applications but not
+supported in firmware at the time of writing.
+
 Finally a suggestion is offered for an enhancement to a future Pyboard version.
 
 ## Use cases
@@ -26,7 +29,7 @@ photovoltaic cells.
 
 ## Standby mode
 
-To achieve minimum power the code must be deigned so that the Pyboard spends the majority of its time in
+To achieve minimum power the code must be designed so that the Pyboard spends the majority of its time in
 standby mode. In this mode the current drawn by the MPU drops to some 4uA. The Pyboard draws about
 30uA largely owing to the onboard LDO voltage regulator which cannot (without surgery) be disabled. Note that
 on recovery from standby the code will be loaded and run from the start: program state is not retained.
@@ -54,6 +57,9 @@ if not usb_connected:
 
 The ``usb_connected`` logic simplifies debugging using a USB cable while minimising power when run without USB. The
 first boot detection is a potentially useful convenience.
+
+There are three ways to recover from standby: an rtc wakeup, a tamper input, and a wakeup input. See below
+for support for these in ``upower.py``.
 
 ## Nonvolatile memory and storage in standby
 
@@ -342,85 +348,141 @@ these cells.
 
 # Coding tips
 
-The code below includes ways of accessing features not supported by the firmware at the time of writing.
-Check for official support before using.
-
 ## CPU clock speed
 
 When coding for minimum power consumption there are various options. One is to reduce the CPU
 clock speed: its current draw in normal running mode is roughly proportional to clock speed. However
 in computationally intensive tasks the total charge drawn from a battery may not be reduced since
 processing time will double if the clock rate is halved. This is a consequence of the way CMOS
-logic works: gates use a fixed amount of charge per transition.
+logic works: gates use a fixed amount of charge per transition. If your code spends time waiting
+on ``pyb.delay()`` reducing clock rate will help, but see below for an alternative solution.
 
-If your code spends time waiting on ``pyb.delay()`` reducing clock rate will help. But also
-consider this low power alternative to ``pyb.delay()``.
+## Module upower
+
+This module provides ways of accessing features not supported by the firmware at the time of writing.
+Check for official support before using. The module requires a firmware build dated
+7th October 2015 or later.
+
+Note on objects in this module. Once ``rtc.wakeup()`` is issued, methods other than
+``enable()`` should be avoided as some employ the RTC. Issue ``rtc.wakeup()`` shortly
+before `pyb.standby``.
+
+The module provides the following functions:
+ 1. ``lpdelay`` A low power alternative to ``pyb.delay()``
+ 2. ``why`` Returns a string providing the cause of a wakeup
+
+The module instantiates the following objects, which can be imported and accessed.
+ 1. ``rtc`` Instance of pyb.rtc()
+ 2. ``bkpram`` Object providing access to the backup RAM.
+ 3. ``rtcregs`` Object providing access to the backup registers.
+ 4. ``tamper`` Enables wakeup from the Tamper pin X18
+ 5. ``wup_X1`` Enables wakeup from a positive edge on pin X1
+
+### Function ``lpdelay()``
+
+This function accepts two arguments, a delay in mS and a flag which forces use of ``pyb.delay()``.
+The latter facilitates debugging at the repl: the function normally uses ``pyb.stop()`` to reduce
+power consumption to 500uA, but using this kills the USB connection.
 
 ```python
-def lpdelay(ms):
-    rtc.wakeup(ms)
-    pyb.stop()
-    rtc.wakeup(None)
+import pyb
+from upower import lpdelay
+usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+lpdelay(1000, usb_connected)
 ```
 
-This reduces current consumption for the duration of the delay from 20mA to 500uA. Clearly it
-assumes that the rtc can be dedicated to this task. This opens up an idea for a project: a
-cooperative scheduler based on microthreading and using the rtc to schedule threads. This would
-be for continuously running low power systems rather than ones using ``pyb.standby()`` and would
-imply a current draw of 500uA while idle.
+### Function ``why()``
 
-## RTC Backup registers
+On wakeup calling this will return one of the following strings:
+ 1. 'BOOT' The Pyboard was powered up or had a soft or hard reset
+ 2. 'TAMPER' Woken by the ``tamper`` object (event on pin X18)
+ 3. 'WAKEUP' Timer wakeup
+ 4. 'X1' Woken by a high going edge on pin X1
+
+### RTC Backup registers (``rtcregs`` object)
 
 The real time clock supports 20 32-bit backup registers whose contents are maintained when in any
 of the low power modes. These may be accessed as an integer array as follows:
 
 ```python
-import stm
-class RTC_Regs(object):
-    def __getitem__(self, idx):
-        assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
-        return stm.mem32[stm.RTC + stm.RTC_BKP0R+ idx * 4]
-    def __setitem__(self, idx, val):
-        assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
-        stm.mem32[stm.RTC + stm.RTC_BKP0R + idx * 4] = val
+import pyb
+from upower import rtcregs
+rtcregs[5] = 1234
 ```
 
 Register zero is used by the firmware and should be avoided. Other registers are initialised to
-zero after power up.
+zero after power up and also after a tamper event.
 
-## Backup RAM
+### Backup RAM (``bkpram`` object)
 
-The following class enables this on chip 4KB of RAM to be accessed as an array of integers or as a
+This class enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
 bytearray. The latter supports the buffer protocol which offers considerable flexbility in its use.
-Like all RAM its initial contents after power up are arbitrary.
+Like all RAM its initial contents after power up are arbitrary. Note that the ``why()`` function
+uses the topmost word (``bkpram[1023]``).
 
 ```python
-import stm, uctypes
-class BkpRAM(object):
-    BKPSRAM = 0x40024000
-    def __init__(self):
-      stm.mem32[stm.RCC + stm.RCC_APB1ENR] |= 0x10000000 # PWREN bit
-      stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100 # Set the DBP bit in the PWR power control register
-      stm.mem32[stm.RCC +stm.RCC_AHB1ENR]|= 0x40000 # enable BKPSRAMEN
-      stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup register enable bit
-    def __getitem__(self, idx):
-        assert idx >= 0 and idx <= 0x3ff, "Index must be between 0 and 1023"
-        return stm.mem32[self.BKPSRAM + idx * 4]
-    def __setitem__(self, idx, val):
-        assert idx >= 0 and idx <= 0x3ff, "Index must be between 0 and 1023"
-        stm.mem32[self.BKPSRAM + idx * 4] = val
-    def get_bytearray(self):
-        return uctypes.bytearray_at(self.BKPSRAM, 4096)
-
-bram = BkpRAM() # Create the RAM object (after each recovery from standby)
-bram[0] = 22 # use as integer array
-ba = bram.get_bytearray()
+from upower import bkpram
+bkpram[0] = 22 # use as integer array
+ba = bkpram.get_bytearray()
 ba[4] = 0 # or as a bytearray
 ```
 
+### Wakeup pin X1 (``wup_X1`` object)
+
+Enabling this converts pin X1 into an input with a pulldown resistor enabled even in standby mode. A low to
+high transition will wake the Pyboard from standby. Note that, being edge triggered, the response
+to switch bounce is moot: in my testing I didn't observe it. The following code fragment
+illustrates its use. A complete example is in ``ttest.py``.
+
+```python
+from upower import wup_X1
+  # code omitted
+wup_X1.enable()
+if not usb_connected:
+    pyb.standby()
+```
+
+### Tamper pin X18 (``tamper`` object)
+
+This is a flexible way to interrupt a standby condition, providing for edge or level detection the
+latter with hardware switch debouncing. Level detection operates as follows. The pin is normally
+high impedance. At intervals a pullup resistor is connected and the pin state sampled. After a given
+number of such intervals, if the pin continues to be in the active state, the Pyboard is woken. The
+active state, polling frequency and number of samples may be configured using ``tamper.setup()``.
+
+Note that in edge triggered mode the pin behaves as a normal input with no pullup. If driving from a
+switch, you must provide a pullup (to 3V3) or pulldown as appropriate.
+
+``tamper.setup()`` accepts the following arguments:
+ 1. ``level`` Valid options 0 or 1. In level triggered mode, determines the active level. In edge triggered
+ mode, 0 indicates rising edge trigger, 1 falling edge.
+ 2. ``freq `` Valid options 1, 2, 4, 8, 16, 32, 64, 128: polling frequency in Hz.
+ 3. ``samples`` Valid options 2, 4, 8: number of consecutive samples before wakeup occurs.
+ 4. ``edge`` Boolean. If True, the pin is edge triggered. ``freq`` and ``samples`` are ignored.
+
+``tamper.enable()`` enables the tamper interrupt. Call just before issuing ``pyb.standby()``
+``tamper. wait_inactive()`` Accepts a single optional argument ``usb_connected`` defaulting False:
+if True causes the function to be REPL friendly in its use of ``lpdelay()``. This function is
+intended for use in level triggered mode: it returns when pin X18 has returned to its inactive state.
+Call before issuing ``tamper.enable()`` to avoid recurring interrupts. In edge triggered mode it
+returns immediately.
+``tamper.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
+by the constructor.
+
+See ``ttest.py`` for an example of its usage.
+
+## Module ttest
+
+Demonstrates the ways to wake up from standby and how to differentiate between them.
+
+To run this, edit your ``main.py`` to include ``import ttest``. Power the Pyboard from a source
+other than USB. It will flash the yellow LED after boot and the green one every ten seconds in response
+to a timer wakeup. If pin X1 is pulled to 3V3 red and green will flash. If pin X18 is pulled low red
+will flash.
+
 # Hardware
 
-Hardware as used for the above tests.
+Hardware as used for tests of power switched peripherals.
 
 ![Hardware](hardware.JPG)
 
