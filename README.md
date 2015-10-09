@@ -376,7 +376,7 @@ The module instantiates the following objects, which can be imported and accesse
  2. ``bkpram`` Object providing access to the backup RAM.
  3. ``rtcregs`` Object providing access to the backup registers.
  4. ``tamper`` Enables wakeup from the Tamper pin X18
- 5. ``wup_X1`` Enables wakeup from a positive edge on pin X1
+ 5. ``wkup`` Enables wakeup from a positive edge on pin X1
 
 ### Function ``lpdelay()``
 
@@ -427,20 +427,32 @@ ba = bkpram.get_bytearray()
 ba[4] = 0 # or as a bytearray
 ```
 
-### Wakeup pin X1 (``wup_X1`` object)
+### Wakeup pin X1 (``wkup`` object)
 
 Enabling this converts pin X1 into an input with a pulldown resistor enabled even in standby mode. A low to
-high transition will wake the Pyboard from standby. Note that, being edge triggered, the response
-to switch bounce is moot: in my testing I didn't observe it. The following code fragment
-illustrates its use. A complete example is in ``ttest.py``.
+high transition will wake the Pyboard from standby. The following code fragment illustrates its use.
+A complete example is in ``ttest.py``.
 
 ```python
-from upower import wup_X1
+from upower import wkup
   # code omitted
-wup_X1.enable()
+wkup.enable()
 if not usb_connected:
     pyb.standby()
 ```
+
+The wkup object has the following methods and properties.
+``wkup.enable()`` enables the wkup interrupt. Call just before issuing ``pyb.standby()`` and after
+the use of any other methods as it reconfigures the pin.
+``wkup. wait_inactive()`` Accepts a single optional argument ``usb_connected`` defaulting False:
+if True causes the function to be REPL friendly in its use of ``lpdelay()``. This function returns when
+pin X1 has returned low. This might be used to debounce the trailing edge of the contact period:
+call ``lpdelay(50)`` after the function returns and before entering standby to ensure that contact
+bounce is over.
+``wkup.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
+by the constructor.
+
+``wkup.pinvalue`` Property returning the value of the signal on the pin: 0 is low, 1 high.
 
 ### Tamper pin X18 (``tamper`` object)
 
@@ -460,14 +472,17 @@ switch, you must provide a pullup (to 3V3) or pulldown as appropriate.
  3. ``samples`` Valid options 2, 4, 8: number of consecutive samples before wakeup occurs.
  4. ``edge`` Boolean. If True, the pin is edge triggered. ``freq`` and ``samples`` are ignored.
 
-``tamper.enable()`` enables the tamper interrupt. Call just before issuing ``pyb.standby()``
+``tamper.enable()`` enables the tamper interrupt. Call just before issuing ``pyb.standby()`` and after
+the use of any other methods as it reconfigures the pin.
 ``tamper. wait_inactive()`` Accepts a single optional argument ``usb_connected`` defaulting False:
-if True causes the function to be REPL friendly in its use of ``lpdelay()``. This function is
-intended for use in level triggered mode: it returns when pin X18 has returned to its inactive state.
-Call before issuing ``tamper.enable()`` to avoid recurring interrupts. In edge triggered mode it
-returns immediately.
+if True causes the function to be REPL friendly in its use of ``lpdelay()``. This function returns when
+pin X18 has returned to its inactive state. In level triggered mode this may be called before issuing
+``tamper.enable()`` to avoid recurring interrupts. In edge triggered mode where the signal is from
+a switch it might be used to debounce the trailing edge of the contact period.
 ``tamper.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
 by the constructor.
+
+``tamper.pinvalue`` Property returning the value of the signal on the pin: 0 is 0V regardless of ``level``
 
 See ``ttest.py`` for an example of its usage.
 
@@ -476,9 +491,9 @@ See ``ttest.py`` for an example of its usage.
 Demonstrates the ways to wake up from standby and how to differentiate between them.
 
 To run this, edit your ``main.py`` to include ``import ttest``. Power the Pyboard from a source
-other than USB. It will flash the yellow LED after boot and the green one every ten seconds in response
-to a timer wakeup. If pin X1 is pulled to 3V3 red and green will flash. If pin X18 is pulled low red
-will flash.
+other than USB. It will flash the yellow LED after boot and the green and yellow ones every ten seconds
+in response to a timer wakeup. If pin X1 is pulled to 3V3 red and green will flash. If pin X18 is pulled
+low red will flash.
 
 # Hardware
 

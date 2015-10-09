@@ -64,6 +64,8 @@ class Tamper(object):
         self.triggerlevel = 0
         self.tampmask = 0
         self.disable()                          # Ensure no events occur until we're ready
+        self.pin = pyb.Pin.board.X18
+        self.pin_configured = False             # Conserve power: enable pullup only if needed
         self.setup()
 
     def setup(self, level = 0, *, freq = 16, samples = 2, edge = False):
@@ -89,14 +91,23 @@ class Tamper(object):
             else:
                 raise ValueError("Number of samples must be 2, 4, or 8")
 
+    def _pinconfig(self):
+        if not self.pin_configured:
+            self.pin.init(mode = pyb.Pin.IN, pull = pyb.Pin.PULL_UP)
+            self.pin_configured = True
+
     def disable(self):
         stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask
 
     def wait_inactive(self, usb_connected = False):
-        if not self.edge_triggered:
-            tamper_pin = pyb.Pin(pyb.Pin.board.X18, pyb.Pin.IN, pull = pyb.Pin.PULL_UP)
-            while tamper_pin.value() == self.triggerlevel: # Wait for pin to go logically off
-                lpdelay(50, usb_connected)
+        self._pinconfig()
+        while self.pin.value() == self.triggerlevel: # Wait for pin to go logically off
+            lpdelay(50, usb_connected)
+
+    @property
+    def pinvalue(self):
+        self._pinconfig()
+        return self.pin.value()
 
     def enable(self):
         BIT21 = 1 << 21                                 # Tamper mask bit
@@ -114,13 +125,24 @@ tamper = Tamper()
 class wakeup_X1(object):                                # Support wakeup on low-high edge on pin X1
     def __init__(self):
         self.disable()
+        self.pin = pyb.Pin(pyb.Pin.board.X1, mode = pyb.Pin.IN, pull = pyb.Pin.PULL_DOWN)
+
     def enable(self):                                   # In this mode pin has pulldown enabled
         stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # set CWUF to clear WUF in PWR_CSR
         stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x100       # Enable wakeup
+
     def disable(self):
         stm.mem32[stm.PWR + stm.PWR_CSR] &= 0xfffffeff  # Disable wakeup
 
-wup_X1 = wakeup_X1()
+    def wait_inactive(self, usb_connected = False):
+        while self.pin.value() == 1:                    # Wait for pin to go low
+            lpdelay(50, usb_connected)
+
+    @property
+    def pinvalue(self):
+        return self.pin.value()
+
+wkup = wakeup_X1()
 
 # Return the reason for a wakeup event. Note that boot detection uses the last word of backup RAM.
 
@@ -134,3 +156,12 @@ def why():
     if rtc_isr & 0x400 == 0x400:
         return 'WAKEUP'
     return 'X1'
+
+def ms_set(): # For debug purposes only. Decodes outcome of setting rtc.wakeup().
+    dividers = (16, 8, 4, 2)
+    wucksel = stm.mem32[stm.RTC + stm.RTC_CR] & 7
+    div = dividers[wucksel & 3]
+    wut = stm.mem32[stm.RTC + stm.RTC_WUTR] & 0xffff
+    clock_period = div/32768 if wucksel < 4 else 1.0  # seconds
+    period = clock_period * wut if wucksel < 6 else clock_period * (wut + 0x10000)
+    return 1000 * period
