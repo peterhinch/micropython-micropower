@@ -2,8 +2,11 @@
 # Copyright 2015 Peter Hinch
 # V0.1 7th October 2015
 
-import pyb, stm, os
-rtc = pyb.RTC()
+# http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
+import pyb, stm, os, utime
+
+class RTCError(OSError):
+    pass
 
 def buildcheck(tupTarget):
     fail = True
@@ -15,20 +18,12 @@ def buildcheck(tupTarget):
     if fail:
         raise OSError('This driver requires a firmware build dated {:4d}-{:02d}-{:02d} or later'.format(*tupTarget))
 
-buildcheck((2015,10,7)) # Bug in earlier versions made lpdelay() unpredictable.
+buildcheck((2015,10,9)) # Bug in earlier versions made lpdelay() unpredictable, also issue with standby > 5 mins.
 
 @micropython.asm_thumb
 def ctz(r0):                                    # Count the trailing zeros in an integer
     rbit(r0, r0)
     clz(r0, r0)
-
-def lpdelay(ms, usb_connected = False):         # Low power delay. Note stop() kills USB
-    if usb_connected:
-        pyb.delay(ms)
-        return
-    rtc.wakeup(ms)
-    pyb.stop()
-    rtc.wakeup(None)
 
 class BkpRAM(object):
     BKPSRAM = 0x40024000
@@ -57,6 +52,17 @@ class RTC_Regs(object):
         stm.mem32[stm.RTC + stm.RTC_BKP0R + idx * 4] = val
 
 rtcregs = RTC_Regs()
+rtcregs[0] = 0x32f2
+
+rtc = pyb.RTC()
+
+def lpdelay(ms, usb_connected = False):         # Low power delay. Note stop() kills USB
+    if usb_connected:
+        pyb.delay(ms)
+        return
+    rtc.wakeup(ms)
+    pyb.stop()
+    rtc.wakeup(None)
 
 class Tamper(object):
     def __init__(self):
@@ -145,7 +151,6 @@ class wakeup_X1(object):                                # Support wakeup on low-
 wkup = wakeup_X1()
 
 # Return the reason for a wakeup event. Note that boot detection uses the last word of backup RAM.
-
 def why():
     if bkpram[1023] != 0x27288a6f:
         bkpram[1023] = 0x27288a6f
@@ -156,6 +161,31 @@ def why():
     if rtc_isr & 0x400 == 0x400:
         return 'WAKEUP'
     return 'X1'
+
+def now():  # Return the current time from the RTC in secs and millisecs from year 2000
+    secs = utime.time()
+    ms = 1000*(255 -rtc.datetime()[7]) >> 8
+    if ms < 50:                                 # Might have just rolled over
+        secs = utime.time()
+    return secs, ms
+
+# Save the current time in mS 
+def savetime(addr = 1021):
+    bkpram[addr], bkpram[addr +1] = now()
+
+# Return the number of mS outstanding from a delay of delta mS
+def ms_left(delta, addr = 1021):
+    if bkpram[1023] != 0x27288a6f:
+        raise RTCError("System not initialised.")
+    if not (bkpram[addr +1] <= 1000 and bkpram[addr +1] >= 0):
+        raise RTCError("Time data not saved.")
+    start_ms = 1000*bkpram[addr] + bkpram[addr +1]
+    now_secs, now_millis = now()
+    now_ms = 1000* now_secs + now_millis
+    result = max(start_ms + delta - now_ms, 0)
+    if result > delta:
+        raise RTCError("Invalid saved time data.")
+    return result
 
 def ms_set(): # For debug purposes only. Decodes outcome of setting rtc.wakeup().
     dividers = (16, 8, 4, 2)

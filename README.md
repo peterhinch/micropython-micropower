@@ -370,6 +370,11 @@ before `pyb.standby``.
 The module provides the following functions:
  1. ``lpdelay`` A low power alternative to ``pyb.delay()``
  2. ``why`` Returns a string providing the cause of a wakeup
+ 3. ``now`` Returns RTC time in seconds and millisecs since the start of year 2000
+ 4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1021
+ 5. ``ms_left`` Enables a timed sleep or standby to be resumed after a tamper or WKUP interrupt.
+ Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
+ ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021)
 
 The module instantiates the following objects, which can be imported and accessed.
  1. ``rtc`` Instance of pyb.rtc()
@@ -399,6 +404,29 @@ On wakeup calling this will return one of the following strings:
  3. 'WAKEUP' Timer wakeup
  4. 'X1' Woken by a high going edge on pin X1
 
+### Function ``now()``
+
+Returns RTC time since the start of year 2000. Two integers are returned, the seconds value and a
+value of milliseconds (from 0 to 999). The function is mainly intended for use in
+implementing sleep or standby delays which can be resumed after an interrupt from tamper or WKUP.
+Millisecond precision is meaningless in standby periods where wakeups are slow, but might be relevant to sleep.
+
+### Function ``savetime()``
+
+Store current RTC time in backup RAM. Optional argument ``addr`` default 1021. This uses two words
+to store the seconds and milliseconds values produced by ``now()``
+
+### Function ``ms_left()``
+
+This produces a value of delay for presenting to ``wakeup()`` and enables a timed sleep or standby to be
+resumed after a tamper or WKUP interrupt. To use it, execute ``savetime`` before commencing the sleep/standby.
+Arguments ``delta`` normally the original delay period in mS, ``addr`` the address where the time was saved
+(default 1021).
+
+The test program ``ttest.py`` illustrates its use. Note that, at the time of writing (18th Oct 2015)
+the firmware has a bug which resets the RTC after a tamper event. This prevents the resumption of
+delays after a tamper event. A PR is in the pipeline.
+
 ### RTC Backup registers (``rtcregs`` object)
 
 The real time clock supports 20 32-bit backup registers whose contents are maintained when in any
@@ -416,7 +444,7 @@ zero after power up and also after a tamper event.
 ### Backup RAM (``bkpram`` object)
 
 This class enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
-bytearray. The latter supports the buffer protocol which offers considerable flexbility in its use.
+bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
 Like all RAM its initial contents after power up are arbitrary. Note that the ``why()`` function
 uses the topmost word (``bkpram[1023]``).
 
