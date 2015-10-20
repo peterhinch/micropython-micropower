@@ -3,7 +3,7 @@
 # V0.1 7th October 2015
 
 # http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
-import pyb, stm, os, utime
+import pyb, stm, os, utime, uctypes
 
 class RTCError(OSError):
     pass
