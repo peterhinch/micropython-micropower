@@ -1,15 +1,12 @@
 # ttest.py Demonstrate ways to exit from pyb.standby()
 
-# Copyright Peter Hinch 18th October 2015
+# Copyright Peter Hinch 21st October 2015
 
 # draws 32uA between LED flashes runing from flash.
 # This doesn't do much running from USB because the low power modes kill the USB interface.
 # Note that the blue LED is best avoided in these applications as it currently uses PWM: this can
 # lead to some odd effects in time dependent applications.
 # Note also that pyboard firmware briefly flashes the green LED on all wakeups.
-
-# Firmware bug: Tamper causes Time to be reset to 1st Jan 2014 by rtc.c because 
-# rtc.c uses register 0 to determine whether Pyboard was reset and RTC registers are cleared by tamper
 
 import pyb, utime, upower
 upower.tamper.setup(level = 0, freq = 16, samples = 2, edge = False) # A level of zero triggers
@@ -45,11 +42,11 @@ upower.wkup.wait_inactive(usb_connected)
 upower.lpdelay(50, usb_connected)               # Wait out any contact bounce
                                                 # demo of not resetting the wakeup timer after a pin interrupt
 try:                                            # ms_left can fail in response to various coding errors
-    timeleft = upower.ms_left(10000)            # including the current firmware bug
+    timeleft = upower.ms_left(10000)
 except upower.RTCError:
     timeleft = 10000                            # Here we just restart the timer
 timeleft = max(timeleft, 1000)                  # Set a minimum sleep duration: too short and it uses less power to stay awake
-
+                                                # In real apps this might be longer or you might deal with it in other ways.
 upower.rtc.wakeup(timeleft)
 # These calls reconfigure hardware and should be done last, shortly before standby()
 upower.tamper.enable()

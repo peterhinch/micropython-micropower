@@ -539,6 +539,25 @@ other than USB. It will flash the yellow LED after boot and the green and yellow
 in response to a timer wakeup. If pin X1 is pulled to 3V3 red and green will flash. If pin X18 is pulled
 low red will flash.
 
+## Final tip: checking firmware build
+
+In code intended for distribution consider including the folowing check to avoid spurious bug reports.
+
+```Python
+import os
+def buildcheck(tupTarget):
+    fail = True
+    if 'uname' in dir(os):
+        datestring = os.uname()[3]
+        date = datestring.split(' on')[1]
+        idate = tuple([int(x) for x in date.split('-')])
+        fail = idate < tupTarget
+    if fail:
+        raise OSError('This driver requires a firmware build dated {:4d}-{:02d}-{:02d} or later'.format(*tupTarget))
+
+buildcheck((2015,10,21))
+```
+
 # Hardware
 
 Hardware as used for tests of power switched peripherals.
