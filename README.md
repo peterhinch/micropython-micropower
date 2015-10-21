@@ -1,5 +1,6 @@
 # micropython-micropower
-Some ideas for building ultra low power systems based on the Pyboard
+Some ideas for building ultra low power systems based on the Pyboard. This document is based on Pyboard
+firmware dated 21st October 2015. Earlier versions had issues affecting the real time clock (RTC).
 
 # Abstract
 
@@ -291,7 +292,7 @@ else:
 ```
 
 Measurements were performed with the slave nearby so that timeouts never occurred. A comparison of the current
-waveform presented above with that recorded by @moose shows virtually identicalbehaviour for the first 180mS as
+waveform presented above with that recorded by @moose shows virtually identical behaviour for the first 180mS as
 the Pyboard boots up. There is then a period of some 230mS until power is applied to the peripherals where
 the board continues to draw some 60mA: compilation of imported modules to byte code is likely to be responsible
 for the bulk of this charge usage. The code which performs the actual application - namely power control and
@@ -361,7 +362,7 @@ on ``pyb.delay()`` reducing clock rate will help, but see below for an alternati
 
 This module provides ways of accessing features not supported by the firmware at the time of writing.
 Check for official support before using. The module requires a firmware build dated
-7th October 2015 or later.
+21st October 2015 or later.
 
 Note on objects in this module. Once ``rtc.wakeup()`` is issued, methods other than
 ``enable()`` should be avoided as some employ the RTC. Issue ``rtc.wakeup()`` shortly
@@ -374,14 +375,14 @@ The module provides the following functions:
  4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1021
  5. ``ms_left`` Enables a timed sleep or standby to be resumed after a tamper or WKUP interrupt.
  Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
- ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021)
+ ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021).
 
 The module instantiates the following objects, which can be imported and accessed.
- 1. ``rtc`` Instance of pyb.rtc()
+ 1. ``rtc`` Instance of pyb.rtc().
  2. ``bkpram`` Object providing access to the backup RAM.
  3. ``rtcregs`` Object providing access to the backup registers.
- 4. ``tamper`` Enables wakeup from the Tamper pin X18
- 5. ``wkup`` Enables wakeup from a positive edge on pin X1
+ 4. ``tamper`` Enables wakeup from the Tamper pin X18.
+ 5. ``wkup`` Enables wakeup from a positive edge on pin X1.
 
 ### Function ``lpdelay()``
 
@@ -421,11 +422,10 @@ to store the seconds and milliseconds values produced by ``now()``
 This produces a value of delay for presenting to ``wakeup()`` and enables a timed sleep or standby to be
 resumed after a tamper or WKUP interrupt. To use it, execute ``savetime`` before commencing the sleep/standby.
 Arguments ``delta`` normally the original delay period in mS, ``addr`` the address where the time was saved
-(default 1021).
+(default 1021). The function can raise an exception in response to a number of errors such as the case
+where a time was not saved or the RTC was adjusted after saving. The defensive coder will trap these!
 
-The test program ``ttest.py`` illustrates its use. Note that, at the time of writing (18th Oct 2015)
-the firmware has a bug which resets the RTC after a tamper event. This prevents the resumption of
-delays after a tamper event. A PR is in the pipeline.
+The test program ``ttest.py`` illustrates its use.
 
 ### RTC Backup registers (``rtcregs`` object)
 
@@ -438,12 +438,11 @@ from upower import rtcregs
 rtcregs[5] = 1234
 ```
 
-Register zero is used by the firmware and should be avoided. Other registers are initialised to
-zero after power up and also after a tamper event.
+Registers are initialised to zero after power up and also after a tamper event.
 
 ### Backup RAM (``bkpram`` object)
 
-This class enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
+This object enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
 bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
 Like all RAM its initial contents after power up are arbitrary. Note that the ``why()`` function
 uses the topmost word (``bkpram[1023]``).
@@ -453,6 +452,23 @@ from upower import bkpram
 bkpram[0] = 22 # use as integer array
 ba = bkpram.get_bytearray()
 ba[4] = 0 # or as a bytearray
+```
+
+The following code fragment illustrates the use of JSON to save an arbitrary Python object to
+backup RAM and restore it on a subsequent wakeup. Usage with the pickle module is similar and
+produces almost identical data volumes.
+
+```python
+from upower import bkpram
+a = {'rats':77, 'dogs':99,'elephants':9, 'zoo':100}
+z = json.dumps(a).encode('utf8')
+ba = bkpram.get_bytearray()
+bkpram[0] = len(z)
+ba[4: 4+len(z)] = z # Copy into backup RAM
+ # Resumption after standby
+from upower import bkpram
+ba = bkpram.get_bytearray()
+a = json.loads(bytes(ba[4:4+bkpram[0]]).decode("utf-8")) # retrieve dictionary
 ```
 
 ### Wakeup pin X1 (``wkup`` object)
@@ -469,14 +485,14 @@ if not usb_connected:
     pyb.standby()
 ```
 
-The wkup object has the following methods and properties.
+The wkup object has the following methods and properties.  
 ``wkup.enable()`` enables the wkup interrupt. Call just before issuing ``pyb.standby()`` and after
-the use of any other methods as it reconfigures the pin.
+the use of any other methods as it reconfigures the pin.  
 ``wkup. wait_inactive()`` Accepts a single optional argument ``usb_connected`` defaulting False:
 if True causes the function to be REPL friendly in its use of ``lpdelay()``. This function returns when
 pin X1 has returned low. This might be used to debounce the trailing edge of the contact period:
 call ``lpdelay(50)`` after the function returns and before entering standby to ensure that contact
-bounce is over.
+bounce is over.  
 ``wkup.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
 by the constructor.
 
@@ -501,12 +517,12 @@ switch, you must provide a pullup (to 3V3) or pulldown as appropriate.
  4. ``edge`` Boolean. If True, the pin is edge triggered. ``freq`` and ``samples`` are ignored.
 
 ``tamper.enable()`` enables the tamper interrupt. Call just before issuing ``pyb.standby()`` and after
-the use of any other methods as it reconfigures the pin.
+the use of any other methods as it reconfigures the pin.  
 ``tamper. wait_inactive()`` Accepts a single optional argument ``usb_connected`` defaulting False:
 if True causes the function to be REPL friendly in its use of ``lpdelay()``. This function returns when
 pin X18 has returned to its inactive state. In level triggered mode this may be called before issuing
 ``tamper.enable()`` to avoid recurring interrupts. In edge triggered mode where the signal is from
-a switch it might be used to debounce the trailing edge of the contact period.
+a switch it might be used to debounce the trailing edge of the contact period.  
 ``tamper.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
 by the constructor.
 
