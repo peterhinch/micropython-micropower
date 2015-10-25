@@ -131,7 +131,13 @@ tamper = Tamper()
 class wakeup_X1(object):                                # Support wakeup on low-high edge on pin X1
     def __init__(self):
         self.disable()
-        self.pin = pyb.Pin(pyb.Pin.board.X1, mode = pyb.Pin.IN, pull = pyb.Pin.PULL_DOWN)
+        self.pin = pyb.Pin.board.X1                     # Don't configure pin unless user accesses wkup
+        self.pin_configured = False
+
+    def _pinconfig(self):
+        if not self.pin_configured:
+            self.pin.init(mode = pyb.Pin.IN, pull = pyb.Pin.PULL_DOWN)
+            self.pin_configured = True
 
     def enable(self):                                   # In this mode pin has pulldown enabled
         stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # set CWUF to clear WUF in PWR_CSR
@@ -141,11 +147,13 @@ class wakeup_X1(object):                                # Support wakeup on low-
         stm.mem32[stm.PWR + stm.PWR_CSR] &= 0xfffffeff  # Disable wakeup
 
     def wait_inactive(self, usb_connected = False):
+        self._pinconfig()
         while self.pin.value() == 1:                    # Wait for pin to go low
             lpdelay(50, usb_connected)
 
     @property
     def pinvalue(self):
+        self._pinconfig()
         return self.pin.value()
 
 wkup = wakeup_X1()
