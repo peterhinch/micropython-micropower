@@ -16,10 +16,6 @@ leds = tuple(pyb.LED(x) for x in range(1, 5))   # rgyb
 for led in leds:
     led.off()
 
-usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
-if not usb_connected:
-    pyb.usb_mode(None)                          # Save power
-
 reason = upower.why()                           # Why have we woken?
 if reason == 'BOOT':                            # first boot or reset: yellow LED
     upower.rtc.datetime((2015, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
@@ -36,10 +32,14 @@ elif reason == 'X1':                            # red and green on X1 rising edg
     leds[1].on()
     leds[0].on()
 
-upower.lpdelay(500, usb_connected)              # ensure LED visible before standby turns it off
-upower.tamper.wait_inactive(usb_connected)      # Wait for tamper signal to go away
-upower.wkup.wait_inactive(usb_connected)
-upower.lpdelay(50, usb_connected)               # Wait out any contact bounce
+#if not upower.usb_connected:                    # Assume boot.py has set up a UART
+#    t = upower.rtc.datetime()[4:7]
+#    print('{:02d}.{:02d}.{:02d}'.format(t[0],t[1],t[2]))
+
+upower.lpdelay(500, upower.usb_connected)              # ensure LED visible before standby turns it off
+upower.tamper.wait_inactive(upower.usb_connected)      # Wait for tamper signal to go away
+upower.wkup.wait_inactive(upower.usb_connected)
+upower.lpdelay(50, upower.usb_connected)               # Wait out any contact bounce
                                                 # demo of not resetting the wakeup timer after a pin interrupt
 try:                                            # ms_left can fail in response to various coding errors
     timeleft = upower.ms_left(10000)
@@ -51,5 +51,5 @@ upower.rtc.wakeup(timeleft)
 # These calls reconfigure hardware and should be done last, shortly before standby()
 upower.tamper.enable()
 upower.wkup.enable()
-if not usb_connected:
+if not upower.usb_connected:
     pyb.standby()                               # This will set pins hi-z and turn LEDs off

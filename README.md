@@ -17,8 +17,6 @@ typical application code.
 A module ``upower.py`` is provided giving access to features useful in low power applications but not
 supported in firmware at the time of writing.
 
-Finally a suggestion is offered for an enhancement to a future Pyboard version.
-
 ## Use cases
 
 I have considered two types of use case. The first is a monitoring application which periodically wakes,
@@ -42,9 +40,11 @@ typical application will use code along these lines:
 import pyb, stm
 rtc = pyb.RTC()
 
-usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
-if not usb_connected:
-   pyb.usb_mode(None) # Save power
+usb_connected = False
+if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
+    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+    if not usb_connected:                       # Not physically connected
+        pyb.usb_mode(None)                      # Save power
 
 if stm.mem32[stm.RTC + stm.RTC_BKP1R] == 0:     # first boot
    rtc.datetime((2015, 8, 6, 4, 13, 0, 0, 0))   # Code to run on 1st boot only
@@ -57,7 +57,8 @@ if not usb_connected:
 ```
 
 The ``usb_connected`` logic simplifies debugging using a USB cable while minimising power when run without USB. The
-first boot detection is a potentially useful convenience.
+first boot detection is a potentially useful convenience. In general debugging micropower applications is
+simplified by using a UART rather than USB: this is discussed below.
 
 There are three ways to recover from standby: an rtc wakeup, a tamper input, and a wakeup input. See below
 for support for these in ``upower.py``.
@@ -99,12 +100,11 @@ In this state the GPIO pins go high impedance, so the MOSFET remains off by virt
 
 Unfortunately this is inadequate for devices using the I2C bus or using its pins as GPIO. This is because
 the Pyboard has pullup resistors on these pins which will source current into the connected hardware
-even when the latter is powered down. There are two obvious solutions. The first is to switch Vdd as in the
-above schematic (single-ended mode) and also to provide switches in series with the relevant GPIO pins. The second is to
-switch both Vdd and Vss of the connected hardware (double-ended mode). I use the single ended approach.
-The current consumed by the connected hardware when the Pyboard is in standby is then negligible compared to
-the total current draw of 29uA. This (from datasheet values) comprises 4uA for the microprocessor and 25uA
-for the LDO regulator.
+even when the latter is powered down. The simplest solution is to switch Vdd as in the above schematic
+and also to provide switches in series with the relevant GPIO pins to enable them to be put into a high
+impedance state. The current consumed by the connected hardware when the Pyboard is in standby is then
+negligible compared to the total current draw of 29uA. This (from datasheet values) comprises 4uA for the
+microprocessor and 25uA for the LDO regulator.
 
 This can be reduced further by disabling or removing the LDO regulator: I have measured 7uA offering the
 possibility of a year's operation from a CR2032 button cell. In practice achieving this is dependent on the
@@ -112,7 +112,7 @@ frequency and duration of power up events.
 
 ## Design details
 
-The following design provides for single ended switching as described above and also - by virtue of a PCB
+The following design provides for switching as described above and also - by virtue of a PCB
 design - simplifies the connection of the Pyboard to an e-paper display and the NRF24L01. Connections
 are provided for other I2C devices namely ferroelectric RAM (FRAM) [modules](https://learn.adafruit.com/adafruit-i2c-fram-breakout)
 and (rather arbitrarily) the BMP180 pressure sensor although these pins may readily be employed for other I2C modules.
@@ -131,25 +131,32 @@ onboard.
 An editable version is provided in the file epd_vddonly.fzz - this requires the free (as in beer) software
 from [Fritzing](http://fritzing.org/home/) where PCB's can be ordered. The Fritzing software can produce
 extended Gerber files for those wishing to producure boards from other suppliers.
+
+I have an alternative version which replaces the FRAM with a power switched MicroSD card socket and provides a
+connector for an FTDI serial cable on UART4. I can provide details on request.
  
 ## Driver micropower.py
 
-This is generalised to provide for the single-ended or double-ended hardware. If two pins are specified it
-assumes that the active high pin controls the pullups and the active low pin controls power as per the above
-schematic. If a single pin is specified it is taken to control both.
+This is generalised to provide for hardware using a one or two pins to control power and pullups. If two pins
+are specified it assumes that the active high pin controls the pullups and the active low pin controls power
+as per the above schematic. If a single pin is specified it is taken to control both.
 
 The driver supports a single class ``PowerController``
 
 ### Methods
 
 ``PowerController()`` The constructor has two arguments being strings represnting Pyboard pins. If either
-is ``None`` a double ended controller is assumed. Arguments:
- 1. ``pin_active_high`` Driven high in response to ``power_up()``. In single ended mode, powers I2C pullups.
- 2. ``pin_active_low`` Driven low in response to ``power_up()``. In single ended mode powers peripherals.
+is ``None`` it is assumed to control power and pullups. Arguments:
+ 1. ``pin_active_high`` Driven high in response to ``power_up()``. If both pins are defined powers I2C pullups.
+ 2. ``pin_active_low`` Driven low in response to ``power_up()``. If both pins are defined powers peripherals.
 
 ``power_up()`` No arguments. Powers up the peripherals, waits for power to settle before returning.
 ``power_down()`` No arguments. Powers down the peripherals. Waits for power to decay before powering down
 the I2C pullups and de-initialising the buses (the I2C driver seems to require this).
+
+### Property
+
+``single_ended`` Boolean: True if the PowerController has separate control of power and pullups.
 
 The driver provides optional support for use as a context manager thus:
 
@@ -349,6 +356,13 @@ these cells.
 
 # Coding tips
 
+## Debugging using print()
+
+Using USB for the REPL makes this impractical because ``stop()`` and ``standby()`` break the connection. A
+solution is to redirect the REPL to a UART and use a terminal application via a USB to serial
+adaptor. If your code uses ``standby()`` a delay may be necessary prior to the call to ensure
+sufficient time elapses for the data to be transmitted before the chip shuts down.
+
 ## CPU clock speed
 
 When coding for minimum power consumption there are various options. One is to reduce the CPU
@@ -377,12 +391,14 @@ The module provides the following functions:
  Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
  ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021).
 
-The module instantiates the following objects, which can be imported and accessed.
+The module instantiates the following objects, which are available for access.
  1. ``rtc`` Instance of pyb.rtc().
  2. ``bkpram`` Object providing access to the backup RAM.
  3. ``rtcregs`` Object providing access to the backup registers.
- 4. ``tamper`` Enables wakeup from the Tamper pin X18.
- 5. ``wkup`` Enables wakeup from a positive edge on pin X1.
+ 4. ``tamper`` Object enabling wakeup from the Tamper pin X18.
+ 5. ``wkup`` Object enabling wakeup from a positive edge on pin X1.
+ 6. ``usb_connected`` A boolean, True if REPL via USB is enabled and a physical USB connection
+ is in place.
 
 ### Function ``lpdelay()``
 
@@ -393,7 +409,11 @@ power consumption to 500uA, but using this kills the USB connection.
 ```python
 import pyb
 from upower import lpdelay
-usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+usb_connected = False
+if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
+    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+    if not usb_connected:                       # Not physically connected
+        pyb.usb_mode(None)                      # Save power
 lpdelay(1000, usb_connected)
 ```
 
@@ -438,14 +458,16 @@ from upower import rtcregs
 rtcregs[5] = 1234
 ```
 
-Registers are initialised to zero after power up and also after a tamper event.
+Registers are initialised to zero after power up and also after a tamper event. The current firmware
+uses none of these registers but there has been discussion of using the higher numbered registers to
+store system state: check the current documentation.
 
 ### Backup RAM (``bkpram`` object)
 
 This object enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
 bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
 Like all RAM its initial contents after power up are arbitrary. Note that the ``why()`` function
-uses the topmost word (``bkpram[1023]``).
+uses the topmost word (``bkpram[1023]``) and ``savetime()`` uses ``bkpram[1021]`` by default.
 
 ```python
 from upower import bkpram
@@ -564,12 +586,9 @@ Hardware as used for tests of power switched peripherals.
 
 ![Hardware](hardware.JPG)
 
-# Pyboard enhancements
+# Note for hardware designers
 
-Micropower operation would be simpler if a future iteration of the Pyboard included the following,
-controllable in user code:  
- 1. A switched 3.3V peripheral power output.  
- 2. A facility to disable the I2C pullups.  
-
-A facility to disable the regulator via its enable pin would enable the very lowest figures. It could
-be controlled in code or by hardware means such as a solder bridge.
+When designing a board intended for micropower operation, consider incorporating a MOSFET to provide a
+switched 3.3V supply for peripherals. Pullups can either be powered from this switched supply, or for
+greater flexibility driven from a separately controlled MOSFET. In addition, there are now voltage
+regulators with lower quiescent current than that used in the Pyboard V1.0. (e.g. MCP1703A).

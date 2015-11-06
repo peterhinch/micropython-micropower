@@ -52,8 +52,6 @@ class RTC_Regs(object):
         stm.mem32[stm.RTC + stm.RTC_BKP0R + idx * 4] = val
 
 rtcregs = RTC_Regs()
-rtcregs[0] = 0x32f2
-
 rtc = pyb.RTC()
 
 def lpdelay(ms, usb_connected = False):         # Low power delay. Note stop() kills USB
@@ -168,7 +166,9 @@ def why():
         return 'TAMPER'
     if rtc_isr & 0x400 == 0x400:
         return 'WAKEUP'
-    return 'X1'
+    wuf = stm.mem32[stm.PWR + stm.PWR_CSR]
+    if wuf & 1:
+        return 'X1'
 
 def now():  # Return the current time from the RTC in secs and millisecs from year 2000
     secs = utime.time()
@@ -194,6 +194,12 @@ def ms_left(delta, addr = 1021):
     if result > delta:
         raise RTCError("Invalid saved time data.")
     return result
+
+usb_connected = False
+if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
+    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+    if not usb_connected:
+        pyb.usb_mode(None)                      # Save power
 
 def ms_set(): # For debug purposes only. Decodes outcome of setting rtc.wakeup().
     dividers = (16, 8, 4, 2)
