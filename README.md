@@ -571,10 +571,10 @@ Arguments:
  5. ``second`` 0..59
 
 Usage examples:  
-mytimer.timeset(weekday = 1, hour = 17) # Wake at 17:00 every Monday
-mytimer.timeset(hour = 5) # Wake at 5am every day
-mytimer.timeset(minute = 10, second = 30) # Wake up every hour at 10 mins, 30 secs after the hour
-mytimer.timeset(second = 30) # Wake up each time RTC seconds reads 30 i.e. once per minute
+mytimer.timeset(weekday = 1, hour = 17) # Wake at 17:00 every Monday  
+mytimer.timeset(hour = 5) # Wake at 5am every day  
+mytimer.timeset(minute = 10, second = 30) # Wake up every hour at 10 mins, 30 secs after the hour  
+mytimer.timeset(second = 30) # Wake up each time RTC seconds reads 30 i.e. once per minute  
 
 ## Module ttest
 
