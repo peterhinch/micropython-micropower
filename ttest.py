@@ -1,6 +1,6 @@
 # ttest.py Demonstrate ways to exit from pyb.standby()
 
-# Copyright Peter Hinch 21st October 2015
+# Copyright Peter Hinch 8 Nov 2015
 
 # draws 32uA between LED flashes runing from flash.
 # This doesn't do much running from USB because the low power modes kill the USB interface.

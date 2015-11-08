@@ -25,6 +25,7 @@ def ctz(r0):                                    # Count the trailing zeros in an
     rbit(r0, r0)
     clz(r0, r0)
 
+# ***** BACKUP RAM SUPPORT *****
 class BkpRAM(object):
     BKPSRAM = 0x40024000
     def __init__(self):
@@ -43,6 +44,7 @@ class BkpRAM(object):
 
 bkpram = BkpRAM()
 
+# ***** RTC REGISTERS *****
 class RTC_Regs(object):
     def __getitem__(self, idx):
         assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
@@ -54,6 +56,7 @@ class RTC_Regs(object):
 rtcregs = RTC_Regs()
 rtc = pyb.RTC()
 
+# ***** LOW POWER pyb.delay() ALTERNATIVE *****
 def lpdelay(ms, usb_connected = False):         # Low power delay. Note stop() kills USB
     if usb_connected:
         pyb.delay(ms)
@@ -62,6 +65,7 @@ def lpdelay(ms, usb_connected = False):         # Low power delay. Note stop() k
     pyb.stop()
     rtc.wakeup(None)
 
+# ***** TAMPER (X18) PIN SUPPORT *****
 class Tamper(object):
     def __init__(self):
         self.edge_triggered = False
@@ -121,11 +125,12 @@ class Tamper(object):
         stm.mem32[stm.EXTI + stm.EXTI_PR] |= BIT21      # Clear pending bit
 
         stm.mem32[stm.RTC + stm.RTC_ISR] &= 0xdfff      # Clear tamp1f flag
-        stm.mem32[stm.PWR + stm.PWR_CR] |= 2            # Clear power wakeup flag WUF
+        stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # Clear power wakeup flag WUF
         stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask | 5 # Tamper interrupt enable and tamper1 enable
 
 tamper = Tamper()
 
+# ***** WKUP PIN (X1) SUPPORT *****
 class wakeup_X1(object):                                # Support wakeup on low-high edge on pin X1
     def __init__(self):
         self.disable()
@@ -156,16 +161,114 @@ class wakeup_X1(object):                                # Support wakeup on low-
 
 wkup = wakeup_X1()
 
+# ***** RTC TIMER SUPPORT *****
+def bcd(x): # integer to BCD (2 digit max)
+    return (x % 10) + ((x//10) << 4)
+
+# Enables values with top bits set to be written to RTC registers
+@micropython.asm_thumb
+def set_rtc_register(r0, r1, r2):               # MS word, LS word, offset address of register
+    mov(r3, 16)
+    lsl(r0, r3)
+    orr(r0, r1)
+    movw(r3, 0x2800)
+    movt(r3, 0x4000)                            # Base address of RTC 0x40002800
+    orr(r2, r3)
+    str(r0, [r2, 0])
+
+class alarm(object):
+    instantiated = False
+    def __init__(self, ident):
+        assert ident in ('a','A','b','B'), "Ident must be 'A' or 'B'"
+        self.ident = ident.lower()
+        if self.ident == 'a':
+            self.alclear = 0xffeeff
+            self.alenable = 0x1100
+            self.alreg = stm.RTC_ALRMAR
+            self.alisr = 0x1feff
+            self.albit = 1
+        else:
+            self.alclear = 0xffddff
+            self.alenable = 0x2200
+            self.alreg = stm.RTC_ALRMBR
+            self.alisr = 0x1fdff
+            self.albit = 2
+        self.uval = 0
+        self.lval = 0
+        if not alarm.instantiated:
+            BIT17 = 1 << 17
+            alarm.instantiated = True
+            stm.mem32[stm.EXTI + stm.EXTI_IMR] |= BIT17     # Set up ext interrupt
+            stm.mem32[stm.EXTI + stm.EXTI_RTSR] |= BIT17    # Rising edge
+            stm.mem32[stm.EXTI + stm.EXTI_PR] |= BIT17      # Clear pending bit
+
+    def timeset(self, *, day_of_month = None, weekday = None, hour = None, minute = None, second = None):
+        self.uval = 0x8080                      # Mask everything off
+        self.lval = 0x8080
+        setlower = False
+        if day_of_month is not None:
+            assert day_of_month > 0 and day_of_month < 32, "Day of month must be between 1 and 31"
+            self.uval &= 0x7fff                # Unmask day
+            self.uval |= (bcd(day_of_month) << 8)
+            setlower = True
+        elif weekday is not None:
+            assert weekday > 0 and weekday < 8, "Weekday must be from 1 (Monday) to 7"
+            self.uval &= 0x7fff                 # Unmask day
+            self.uval |= 0x4000                 # Indicate day of week
+            self.uval |= (weekday << 8)
+            setlower = True
+        if hour is not None:
+            assert hour >= 0 and hour < 24, "Hour must be 0 to 23"
+            self.uval &= 0xff3f                 # Unmask hour, force 24 hour format
+            self.uval |= bcd(hour)
+            setlower = True
+        elif setlower:
+            self.uval &= 0xff3f                 # Unmask hour, force 24 hour format
+        if minute is not None:
+            assert minute >= 0 and minute < 60, "Minute must be 0 to 59"
+            self.lval &= 0x7fff                 # Unmask minute
+            self.lval |= (bcd(minute) << 8)
+            setlower = True
+        elif setlower:
+            self.lval &= 0x7fff                 # Unmask minute
+        if second is not None:
+            assert second >= 0 and second < 60, "Second must be 0 to 23"
+            self.lval &= 0xff7f                 # Unmask second
+            self.lval |= bcd(second)
+        elif setlower:
+            self.lval &= 0xff7f                 # Unmask second
+        stm.mem32[stm.RTC + stm.RTC_WPR] |= 0xCA            # enable write
+        stm.mem32[stm.RTC + stm.RTC_WPR] |= 0x53
+        stm.mem32[stm.RTC + stm.RTC_CR] &= self.alclear     # Clear ALRxE in RTC_CR to disable Alarm 
+        if self.uval == 0x8080 and self.lval == 0x8080:      # No alarm set: disable
+            stm.mem32[stm.RTC + stm.RTC_WPR] = 0xff         # Write protect
+            return
+        pyb.delay(5)
+        if stm.mem32[stm.RTC + stm.RTC_ISR] & self.albit :  # test ALRxWF IN RTC_ISR
+            set_rtc_register(self.uval, self.lval, self.alreg)
+            stm.mem32[stm.RTC + stm.RTC_ISR] &= self.alisr  # Clear the RTC alarm ALRxF flag
+            stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # Clear the PWR Wakeup (WUF) flag
+            stm.mem32[stm.RTC+stm.RTC_CR] |= self.alenable  # Enable the RTC alarm and interrupt
+            stm.mem32[stm.RTC + stm.RTC_WPR] = 0xff
+        else:
+            raise OSError("Can't access alarm " + self.ident)
+
 # Return the reason for a wakeup event. Note that boot detection uses the last word of backup RAM.
 def why():
     if bkpram[1023] != 0x27288a6f:
         bkpram[1023] = 0x27288a6f
         return 'BOOT'
     rtc_isr = stm.mem32[stm.RTC + stm.RTC_ISR]
-    if rtc_isr & 0x2000 == 0x2000:
+    if rtc_isr & 0x2000:
         return 'TAMPER'
-    if rtc_isr & 0x400 == 0x400:
+    if rtc_isr & 0x400:
         return 'WAKEUP'
+    if rtc_isr & 0x200:
+        stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x200
+        return 'ALARM_B'
+    if rtc_isr & 0x100 :
+        stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x100
+        return 'ALARM_A'
     wuf = stm.mem32[stm.PWR + stm.PWR_CSR]
     if wuf & 1:
         return 'X1'

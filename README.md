@@ -400,6 +400,8 @@ The module instantiates the following objects, which are available for access.
  6. ``usb_connected`` A boolean, True if REPL via USB is enabled and a physical USB connection
  is in place.
 
+The module provides the ``alarm`` class providing access to the two RTC alarms
+
 ### Function ``lpdelay()``
 
 This function accepts two arguments, a delay in mS and a flag which forces use of ``pyb.delay()``.
@@ -424,6 +426,8 @@ On wakeup calling this will return one of the following strings:
  2. 'TAMPER' Woken by the ``tamper`` object (event on pin X18)
  3. 'WAKEUP' Timer wakeup
  4. 'X1' Woken by a high going edge on pin X1
+ 5. 'ALARM_A' Woken by RTC alarm A
+ 6. 'ALARM_B' Woken by RTC alarm B
 
 ### Function ``now()``
 
@@ -552,14 +556,40 @@ by the constructor.
 
 See ``ttest.py`` for an example of its usage.
 
+### alarm class
+
+The RTC supports two alarms 'A' and 'B' each of which can wake the Pyboard at programmed intervals.
+
+Constructor: an alarm is instantiated with a single mandatory argument, 'A' or 'B'.
+Method ``timeset()`` Assuming at least one kw only argument is passed, this will start the timer and cause periodic
+interrupts to be generated. In the absence of arguments the timer will be disabled. Arguments default to ``None``.
+Arguments:
+ 1. ``day_of_month`` 1..31 If present, alarm will occur only on that day
+ 2. ``weekday`` 1 (Monday) - 7 (Sunday) If present, alarm will occur only on that day of the week
+ 3. ``hour`` 0..23
+ 4. ``minute`` 0..59
+ 5. ``second`` 0..59
+
+Usage examples:  
+mytimer.timeset(weekday = 1, hour = 17) # Wake at 17:00 every Monday
+mytimer.timeset(hour = 5) # Wake at 5am every day
+mytimer.timeset(minute = 10, second = 30) # Wake up every hour at 10 mins, 30 secs after the hour
+mytimer.timeset(second = 30) # Wake up each time RTC seconds reads 30 i.e. once per minute
+
 ## Module ttest
 
-Demonstrates the ways to wake up from standby and how to differentiate between them.
+Demonstrates various ways to wake up from standby and how to differentiate between them.
 
 To run this, edit your ``main.py`` to include ``import ttest``. Power the Pyboard from a source
 other than USB. It will flash the yellow LED after boot and the green and yellow ones every ten seconds
 in response to a timer wakeup. If pin X1 is pulled to 3V3 red and green will flash. If pin X18 is pulled
 low red will flash.
+
+## Module alarm
+
+Demonstrates the RTC alarms. Runs both alarms concurrently, waking every 30 seconds and flashing
+LED's to indicate which timer has caused the wakeup. To run this, edit your ``main.py`` to include
+``import alarm``. 
 
 ## Final tip: checking firmware build
 
