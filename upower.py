@@ -255,23 +255,25 @@ class alarm(object):
 
 # Return the reason for a wakeup event. Note that boot detection uses the last word of backup RAM.
 def why():
-    if bkpram[1023] != 0x27288a6f:
-        bkpram[1023] = 0x27288a6f
-        return 'BOOT'
-    rtc_isr = stm.mem32[stm.RTC + stm.RTC_ISR]
-    if rtc_isr & 0x2000:
-        return 'TAMPER'
-    if rtc_isr & 0x400:
-        return 'WAKEUP'
-    if rtc_isr & 0x200:
-        stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x200
-        return 'ALARM_B'
-    if rtc_isr & 0x100 :
-        stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x100
-        return 'ALARM_A'
-    wuf = stm.mem32[stm.PWR + stm.PWR_CSR]
-    if wuf & 1:
-        return 'X1'
+    result = None
+    if stm.mem32[stm.PWR+stm.PWR_CSR] & 2 == 0:
+        result = 'BOOT'
+    else:
+        rtc_isr = stm.mem32[stm.RTC + stm.RTC_ISR]
+        if rtc_isr & 0x2000:
+            result = 'TAMPER'
+        elif rtc_isr & 0x400:
+            result = 'WAKEUP'
+        elif rtc_isr & 0x200:
+            stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x200
+            result = 'ALARM_B'
+        elif rtc_isr & 0x100 :
+            stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x100
+            result = 'ALARM_A'
+        elif stm.mem32[stm.PWR + stm.PWR_CSR] & 1:          # WUF set: the only remaining cause is X1 (?)
+            result = 'X1'                                   # if WUF not set, cause unknown, return None
+    stm.mem32[stm.PWR + stm.PWR_CR] |= 4                    # Clear the PWR Wakeup (WUF) flag
+    return result
 
 def now():  # Return the current time from the RTC in secs and millisecs from year 2000
     secs = utime.time()
@@ -281,13 +283,11 @@ def now():  # Return the current time from the RTC in secs and millisecs from ye
     return secs, ms
 
 # Save the current time in mS 
-def savetime(addr = 1021):
+def savetime(addr = 1023):
     bkpram[addr], bkpram[addr +1] = now()
 
 # Return the number of mS outstanding from a delay of delta mS
-def ms_left(delta, addr = 1021):
-    if bkpram[1023] != 0x27288a6f:
-        raise RTCError("System not initialised.")
+def ms_left(delta, addr = 1023):
     if not (bkpram[addr +1] <= 1000 and bkpram[addr +1] >= 0):
         raise RTCError("Time data not saved.")
     start_ms = 1000*bkpram[addr] + bkpram[addr +1]
