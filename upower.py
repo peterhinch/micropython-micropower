@@ -1,6 +1,6 @@
 # upower.py Enables access to functions useful in low power Pyboard projects
 # Copyright 2015 Peter Hinch
-# V0.1 7th October 2015
+# V0.2 17th November 2015
 
 # http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
 import pyb, stm, os, utime, uctypes
@@ -257,7 +257,11 @@ class alarm(object):
 def why():
     result = None
     if stm.mem32[stm.PWR+stm.PWR_CSR] & 2 == 0:
-        result = 'BOOT'
+        if bkpram[1023] != 0x27288a6f:
+            result = 'BOOT'
+            bkpram[1023] = 0x27288a6f                       # In case a backup battery is in place
+        else:
+            result = 'POWERUP'                              # a backup battery is in place
     else:
         rtc_isr = stm.mem32[stm.RTC + stm.RTC_ISR]
         if rtc_isr & 0x2000:
@@ -283,11 +287,11 @@ def now():  # Return the current time from the RTC in secs and millisecs from ye
     return secs, ms
 
 # Save the current time in mS 
-def savetime(addr = 1022):
+def savetime(addr = 1021):
     bkpram[addr], bkpram[addr +1] = now()
 
 # Return the number of mS outstanding from a delay of delta mS
-def ms_left(delta, addr = 1022):
+def ms_left(delta, addr = 1021):
     if not (bkpram[addr +1] <= 1000 and bkpram[addr +1] >= 0):
         raise RTCError("Time data not saved.")
     start_ms = 1000*bkpram[addr] + bkpram[addr +1]

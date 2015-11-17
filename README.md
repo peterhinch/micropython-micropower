@@ -376,7 +376,8 @@ on ``pyb.delay()`` reducing clock rate will help, but see below for an alternati
 
 This module provides ways of accessing features not supported by the firmware at the time of writing.
 Check for official support before using. The module requires a firmware build dated
-21st October 2015 or later.
+21st October 2015 or later. Note that the detection of wakeup reason uses the topmost address
+of the backup RAM (bkpram[1023]).
 
 Note on objects in this module. Once ``rtc.wakeup()`` is issued, methods other than
 ``enable()`` should be avoided as some employ the RTC. Issue ``rtc.wakeup()`` shortly
@@ -386,10 +387,10 @@ The module provides the following functions:
  1. ``lpdelay`` A low power alternative to ``pyb.delay()``
  2. ``why`` Returns a string providing the cause of a wakeup
  3. ``now`` Returns RTC time in seconds and millisecs since the start of year 2000
- 4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1022 (and 1023)
+ 4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1021 (and 1022)
  5. ``ms_left`` Enables a timed sleep or standby to be resumed after a tamper or WKUP interrupt.
  Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
- ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1022).
+ ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021).
 
 The module instantiates the following objects, which are available for access.
  1. ``rtc`` Instance of pyb.rtc().
@@ -422,12 +423,14 @@ lpdelay(1000, usb_connected)
 ### Function ``why()``
 
 On wakeup calling this will return one of the following strings:
- 1. 'BOOT' The Pyboard was powered up or had a soft or hard reset
- 2. 'TAMPER' Woken by the ``tamper`` object (event on pin X18)
- 3. 'WAKEUP' Timer wakeup
- 4. 'X1' Woken by a high going edge on pin X1
- 5. 'ALARM_A' Woken by RTC alarm A
- 6. 'ALARM_B' Woken by RTC alarm B
+ 1. 'BOOT' The Pyboard was powered up from cold
+ 2. 'POWERUP' Power re-applied to board with backup battery
+ 3. 'TAMPER' Woken by the ``tamper`` object (event on pin X18)
+ 4. 'WAKEUP' Timer wakeup
+ 5. 'X1' Woken by a high going edge on pin X1
+ 6. 'ALARM_A' Woken by RTC alarm A
+ 7. 'ALARM_B' Woken by RTC alarm B
+ 8. returns None if none of the above apply e.g. reset button pressed
 
 ### Function ``now()``
 
@@ -438,7 +441,7 @@ Millisecond precision is meaningless in standby periods where wakeups are slow, 
 
 ### Function ``savetime()``
 
-Store current RTC time in backup RAM. Optional argument ``addr`` default 1022. This uses two words
+Store current RTC time in backup RAM. Optional argument ``addr`` default 1021. This uses two words
 to store the seconds and milliseconds values produced by ``now()``
 
 ### Function ``ms_left()``
@@ -446,7 +449,7 @@ to store the seconds and milliseconds values produced by ``now()``
 This produces a value of delay for presenting to ``wakeup()`` and enables a timed sleep or standby to be
 resumed after a tamper or WKUP interrupt. To use it, execute ``savetime`` before commencing the sleep/standby.
 Arguments ``delta`` normally the original delay period in mS, ``addr`` the address where the time was saved
-(default 1022). The function can raise an exception in response to a number of errors such as the case
+(default 1021). The function can raise an exception in response to a number of errors such as the case
 where a time was not saved or the RTC was adjusted after saving. The defensive coder will trap these!
 
 The test program ``ttest.py`` illustrates its use.
@@ -471,7 +474,7 @@ store system state: check the current documentation.
 This object enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
 bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
 Like all RAM its initial contents after power up are arbitrary unless an RTC backup battery is used.
-Note that ``savetime()`` uses the 32 bit word ``bkpram[1022]`` by default.
+Note that ``savetime()`` uses the 32 bit word ``bkpram[1021]`` by default.
 
 ```python
 from upower import bkpram
