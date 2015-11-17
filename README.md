@@ -386,10 +386,10 @@ The module provides the following functions:
  1. ``lpdelay`` A low power alternative to ``pyb.delay()``
  2. ``why`` Returns a string providing the cause of a wakeup
  3. ``now`` Returns RTC time in seconds and millisecs since the start of year 2000
- 4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1023
+ 4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1022 (and 1023)
  5. ``ms_left`` Enables a timed sleep or standby to be resumed after a tamper or WKUP interrupt.
  Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
- ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1023).
+ ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1022).
 
 The module instantiates the following objects, which are available for access.
  1. ``rtc`` Instance of pyb.rtc().
@@ -438,7 +438,7 @@ Millisecond precision is meaningless in standby periods where wakeups are slow, 
 
 ### Function ``savetime()``
 
-Store current RTC time in backup RAM. Optional argument ``addr`` default 1023. This uses two words
+Store current RTC time in backup RAM. Optional argument ``addr`` default 1022. This uses two words
 to store the seconds and milliseconds values produced by ``now()``
 
 ### Function ``ms_left()``
@@ -446,7 +446,7 @@ to store the seconds and milliseconds values produced by ``now()``
 This produces a value of delay for presenting to ``wakeup()`` and enables a timed sleep or standby to be
 resumed after a tamper or WKUP interrupt. To use it, execute ``savetime`` before commencing the sleep/standby.
 Arguments ``delta`` normally the original delay period in mS, ``addr`` the address where the time was saved
-(default 1023). The function can raise an exception in response to a number of errors such as the case
+(default 1022). The function can raise an exception in response to a number of errors such as the case
 where a time was not saved or the RTC was adjusted after saving. The defensive coder will trap these!
 
 The test program ``ttest.py`` illustrates its use.
@@ -471,7 +471,7 @@ store system state: check the current documentation.
 This object enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
 bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
 Like all RAM its initial contents after power up are arbitrary unless an RTC backup battery is used.
-Note that ``savetime()`` uses the 32 bit word ``bkpram[1023]`` by default.
+Note that ``savetime()`` uses the 32 bit word ``bkpram[1022]`` by default.
 
 ```python
 from upower import bkpram

@@ -283,11 +283,11 @@ def now():  # Return the current time from the RTC in secs and millisecs from ye
     return secs, ms
 
 # Save the current time in mS 
-def savetime(addr = 1023):
+def savetime(addr = 1022):
     bkpram[addr], bkpram[addr +1] = now()
 
 # Return the number of mS outstanding from a delay of delta mS
-def ms_left(delta, addr = 1023):
+def ms_left(delta, addr = 1022):
     if not (bkpram[addr +1] <= 1000 and bkpram[addr +1] >= 0):
         raise RTCError("Time data not saved.")
     start_ms = 1000*bkpram[addr] + bkpram[addr +1]

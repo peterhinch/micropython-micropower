@@ -18,9 +18,12 @@ for led in leds:
 
 reason = upower.why()                           # Why have we woken?
 if reason == 'BOOT':                            # first boot or reset: yellow LED
-    upower.rtc.datetime((2015, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
-    upower.bkpram[0] = utime.time()
-    leds[2].on()
+    if upower.bkpram[0] != 1:                  # never booted before
+        upower.rtc.datetime((2015, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
+        upower.bkpram[0] = 1                   # we may have an RTC backup battery
+        leds[1].on()
+        leds[0].on()                            # RGY == 1st boot
+    leds[2].on()                                # Y only == subsequent boots (with battery)
     upower.savetime()
 elif reason == 'WAKEUP':                        # green and yellow on timer wakeup
     leds[1].on()
@@ -32,9 +35,9 @@ elif reason == 'X1':                            # red and green on X1 rising edg
     leds[1].on()
     leds[0].on()
 
-#if not upower.usb_connected:                    # Assume boot.py has set up a UART
-#    t = upower.rtc.datetime()[4:7]
-#    print('{:02d}.{:02d}.{:02d}'.format(t[0],t[1],t[2]))
+if not upower.usb_connected:                    # Assume boot.py has set up a UART
+    t = upower.rtc.datetime()[4:7]
+    print('{:02d}.{:02d}.{:02d}'.format(t[0],t[1],t[2]))
 
 upower.lpdelay(500, upower.usb_connected)              # ensure LED visible before standby turns it off
 upower.tamper.wait_inactive(upower.usb_connected)      # Wait for tamper signal to go away
