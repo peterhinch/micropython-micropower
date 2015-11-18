@@ -1,5 +1,6 @@
 # micropower.py Support for hardware capable of switching off the power for Pyboard peripherals
 # 28th Aug 2015
+# This code is released under the MIT licence
 # version 0.45
 
 # Copyright 2015 Peter Hinch

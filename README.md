@@ -1,6 +1,8 @@
 # micropython-micropower
 Some ideas for building ultra low power systems based on the Pyboard. This document is based on Pyboard
-firmware dated 21st October 2015. Earlier versions had issues affecting the real time clock (RTC).
+firmware dated 21st October 2015. Earlier versions had issues affecting the real time clock (RTC). Note
+this is a minimum requirement: later versions offer improved RTC accuracy and it is recommended that the
+latest version be used.
 
 # Abstract
 
@@ -15,7 +17,8 @@ consumption of the voltage regulator and the charge required to recover from sta
 typical application code.
 
 A module ``upower.py`` is provided giving access to features useful in low power applications but not
-supported in firmware at the time of writing.
+supported in firmware at the time of writing. The second part of these notes describes its use and offers
+general coding suggestions.
 
 ## Use cases
 
@@ -56,12 +59,15 @@ if not usb_connected:
    pyb.standby()
 ```
 
+Note that this code does not use the upower module which would simplify it. The intention here is to
+illustrate the basic principles of low power operation.
+
 The ``usb_connected`` logic simplifies debugging using a USB cable while minimising power when run without USB. The
 first boot detection is a potentially useful convenience. In general debugging micropower applications is
-simplified by using a UART rather than USB: this is discussed below.
+simplified by using a UART rather than USB: this is strongly recommended and is discussed below.
 
-There are three ways to recover from standby: an rtc wakeup, a tamper input, and a wakeup input. See below
-for support for these in ``upower.py``.
+There are four ways to recover from standby: an RTC wakeup, RTC alarm wakeup, a tamper pin input, and
+a wakeup pin input. See below for support for these in ``upower.py``.
 
 ## Nonvolatile memory and storage in standby
 
@@ -82,8 +88,8 @@ endurance and low power consumption. With the hardware described below the stand
 zero. A driver for FRAM may be found [here](https://github.com/peterhinch/micropython-fram.git) which
 also details a source for the modules.
 
-Larger volumes of data could be stored in an SD card whose power can be controlled as required: the Pyboard
-has an sdcard driver enabling a card in an SPI adapter to be mounted in the filesystem. While lacking the
+Larger volumes of data could be stored in an SD card whose power can be controlled as required: MicroPython
+supports an sdcard driver module enabling a card in an SPI adapter to be mounted in the filesystem. While lacking the
 extreme endurance of FRAM it should offer an effective solution in most applications, with power switching
 overcoming the "always on" limitation of the inbuilt SD card connector.
 
@@ -208,9 +214,9 @@ diode linking its Vout pin to Vin.
 # Some numbers
 
 The capacity of small batteries is measured in milliamp hours (mAH), a measure of electric charge. For
-purposes of measurement on the Pyboard this is rather a large unit, and milliamp seconds (mAS) is used here.
-1mAH = 3600mAS. Note that, because the Pyboard uses a linear voltage regulator, the amount of current
-(and hence charge) used in any situation is substantially independent of battery voltage.
+purposes of measurement on the Pyboard this is rather a large unit, and milliamp seconds (mAS) or
+millicoulomb is used here. 1mAH = 3600mAS. Note that, because the Pyboard uses a linear voltage regulator,
+the amount of current (and hence charge) used in any situation is substantially independent of battery voltage.
  
 After executing ``pyb.standby()`` and with the regulator non-operational the Pyboard consumes about 7uA.
 In a year's running this corrsponds to an charge utilisation of 61mAH, compared to the 225mAH nominal
@@ -354,7 +360,7 @@ to the 4.5V nominal output the regulator would be required in this instance:
 Power = 141uA + 29uA quiescent = 170uA x 24 x 365 = 1.5AH which is within the nominal capacity of
 these cells.
 
-# Coding tips
+# Coding tips and the upower module
 
 ## Debugging using print()
 
@@ -376,21 +382,25 @@ on ``pyb.delay()`` reducing clock rate will help, but see below for an alternati
 
 This module provides ways of accessing features not supported by the firmware at the time of writing.
 Check for official support before using. The module requires a firmware build dated
-21st October 2015 or later. Note that the detection of wakeup reason uses the topmost address
-of the backup RAM (bkpram[1023]).
+21st October 2015 or later and an OSError will be raised if this condition is not met. Later builds
+improve RTC accuracy when standby is used. Note that the module uses the topmost three addresses of
+the backup RAM (1021-1923 inclusive).
 
 Note on objects in this module. Once ``rtc.wakeup()`` is issued, methods other than
 ``enable()`` should be avoided as some employ the RTC. Issue ``rtc.wakeup()`` shortly
 before `pyb.standby``.
 
 The module provides the following functions:
- 1. ``lpdelay`` A low power alternative to ``pyb.delay()``
- 2. ``why`` Returns a string providing the cause of a wakeup
- 3. ``now`` Returns RTC time in seconds and millisecs since the start of year 2000
- 4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1021 (and 1022)
+ 1. ``lpdelay`` A low power alternative to ``pyb.delay()``.
+ 2. ``why`` Returns a string providing the cause of a wakeup.
+ 3. ``now`` Returns RTC time in seconds and millisecs since the start of year 2000.
+ 4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1021 (uses 2 words).
  5. ``ms_left`` Enables a timed sleep or standby to be resumed after a tamper or WKUP interrupt.
  Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
  ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021).
+ 6. ``cprint`` Same usage as ``print`` but does nothing if USB is connected.
+ 7. ``battery_volts`` No args. Returns Vbat and Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
+ Lower values may indicate a failing battery
 
 The module instantiates the following objects, which are available for access.
  1. ``rtc`` Instance of pyb.rtc().
@@ -401,43 +411,34 @@ The module instantiates the following objects, which are available for access.
  6. ``usb_connected`` A boolean, True if REPL via USB is enabled and a physical USB connection
  is in place.
 
-The module provides the ``alarm`` class providing access to the two RTC alarms
+The module provides the ``alarm`` class providing access to the two RTC alarms.
 
 ### Function ``lpdelay()``
 
-This function accepts two arguments, a delay in mS and a flag which forces use of ``pyb.delay()``.
-The latter facilitates debugging at the repl: the function normally uses ``pyb.stop()`` to reduce
-power consumption to 500uA, but using this kills the USB connection.
-
-```python
-import pyb
-from upower import lpdelay
-usb_connected = False
-if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
-    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
-    if not usb_connected:                       # Not physically connected
-        pyb.usb_mode(None)                      # Save power
-lpdelay(1000, usb_connected)
-```
+This function accepts one argument: a delay in mS and is a low power replacement for ``pyb.delay()``.
+The function normally uses ``pyb.stop`` to reduce power consumption from 20mA to 500uA. If USB
+is connected it reverts to ``pyb.delay`` to avoid killing the USB connection.
 
 ### Function ``why()``
 
 On wakeup calling this will return one of the following strings:
- 1. 'BOOT' The Pyboard was powered up from cold
- 2. 'POWERUP' Power re-applied to board with backup battery
- 3. 'TAMPER' Woken by the ``tamper`` object (event on pin X18)
- 4. 'WAKEUP' Timer wakeup
- 5. 'X1' Woken by a high going edge on pin X1
- 6. 'ALARM_A' Woken by RTC alarm A
- 7. 'ALARM_B' Woken by RTC alarm B
- 8. returns None if none of the above apply e.g. reset button pressed
+ 1. 'BOOT' The Pyboard was powered up from cold.
+ 2. 'POWERUP' Power re-applied to board with backup battery.
+ 3. 'TAMPER' Woken by the ``tamper`` object (event on pin X18).
+ 4. 'WAKEUP' Timer wakeup.
+ 5. 'X1' Woken by a high going edge on pin X1.
+ 6. 'ALARM_A' Woken by RTC alarm A.
+ 7. 'ALARM_B' Woken by RTC alarm B.
+ 8. returns None if none of the above apply.
+
+The only time I've observed None is after the reset button is pressed.
 
 ### Function ``now()``
 
 Returns RTC time since the start of year 2000. Two integers are returned, the seconds value and a
 value of milliseconds (from 0 to 999). The function is mainly intended for use in
 implementing sleep or standby delays which can be resumed after an interrupt from tamper or WKUP.
-Millisecond precision is meaningless in standby periods where wakeups are slow, but might be relevant to sleep.
+Millisecond precision is meaningless in standby periods where wakeups are slow, but is relevant to sleep.
 
 ### Function ``savetime()``
 
@@ -467,14 +468,15 @@ rtcregs[5] = 1234
 
 Registers are initialised to zero after power up and also after a tamper event. The current firmware
 uses none of these registers but there has been discussion of using the higher numbered registers to
-store system state: check the current documentation.
+store system state: check the current firmware documentation.
 
 ### Backup RAM (``bkpram`` object)
 
 This object enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
 bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
 Like all RAM its initial contents after power up are arbitrary unless an RTC backup battery is used.
-Note that ``savetime()`` uses the 32 bit word ``bkpram[1021]`` by default.
+Note that ``savetime()`` uses two 32 bit words at 1021 and 1022 by default and startup detection
+uses 1023 so these top three locations should normally be avoided.
 
 ```python
 from upower import bkpram
@@ -484,8 +486,8 @@ ba[4] = 0 # or as a bytearray
 ```
 
 The following code fragment illustrates the use of JSON to save an arbitrary Python object to
-backup RAM and restore it on a subsequent wakeup. Usage with the pickle module is similar and
-produces almost identical data volumes.
+backup RAM and restore it on a subsequent wakeup. Usage with the pickle module in the MicroPython
+library is similar and produces almost identical data volumes.
 
 ```python
 from upower import bkpram
@@ -510,18 +512,16 @@ A complete example is in ``ttest.py``.
 from upower import wkup
   # code omitted
 wkup.enable()
-if not usb_connected:
+if not upower.usb_connected:
     pyb.standby()
 ```
 
 The wkup object has the following methods and properties.  
 ``wkup.enable()`` enables the wkup interrupt. Call just before issuing ``pyb.standby()`` and after
-the use of any other methods as it reconfigures the pin.  
-``wkup. wait_inactive()`` Accepts a single optional argument ``usb_connected`` defaulting False:
-if True causes the function to be REPL friendly in its use of ``lpdelay()``. This function returns when
-pin X1 has returned low. This might be used to debounce the trailing edge of the contact period:
-call ``lpdelay(50)`` after the function returns and before entering standby to ensure that contact
-bounce is over.  
+the use of any other wkup methods as it reconfigures the pin.  
+``wkup. wait_inactive()`` No arguments. This function returns when pin X1 has returned low. This might be
+used to debounce the trailing edge of the contact period: call ``lpdelay(50)`` after the function returns
+and before entering standby to ensure that contact bounce is over.  
 ``wkup.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
 by the constructor.
 
@@ -539,19 +539,18 @@ Note that in edge triggered mode the pin behaves as a normal input with no pullu
 switch, you must provide a pullup (to 3V3) or pulldown as appropriate.
 
 ``tamper.setup()`` accepts the following arguments:
- 1. ``level`` Valid options 0 or 1. In level triggered mode, determines the active level. In edge triggered
- mode, 0 indicates rising edge trigger, 1 falling edge.
- 2. ``freq `` Valid options 1, 2, 4, 8, 16, 32, 64, 128: polling frequency in Hz.
- 3. ``samples`` Valid options 2, 4, 8: number of consecutive samples before wakeup occurs.
- 4. ``edge`` Boolean. If True, the pin is edge triggered. ``freq`` and ``samples`` are ignored.
+ 1. ``level`` Mandatory Valid options 0 or 1. In level triggered mode, determines the active level.
+ In edge triggered mode, 0 indicates rising edge trigger, 1 falling edge. Optional kwonly args:
+ 2. ``freq `` Valid options 1, 2, 4, 8, 16, 32, 64, 128: polling frequency in Hz. Default 16.
+ 3. ``samples`` Valid options 2, 4, 8: number of consecutive samples before wakeup occurs. Default 2.
+ 4. ``edge`` Boolean. If True, the pin is edge triggered. ``freq`` and ``samples`` are ignored. Default False.
 
 ``tamper.enable()`` enables the tamper interrupt. Call just before issuing ``pyb.standby()`` and after
 the use of any other methods as it reconfigures the pin.  
-``tamper. wait_inactive()`` Accepts a single optional argument ``usb_connected`` defaulting False:
-if True causes the function to be REPL friendly in its use of ``lpdelay()``. This function returns when
-pin X18 has returned to its inactive state. In level triggered mode this may be called before issuing
-``tamper.enable()`` to avoid recurring interrupts. In edge triggered mode where the signal is from
-a switch it might be used to debounce the trailing edge of the contact period.  
+``tamper. wait_inactive()`` No arguments. This function returns when pin X18 has returned to its inactive
+state. In level triggered mode this may be called before issuing ``tamper.enable()`` to avoid recurring
+interrupts. In edge triggered mode where the signal is from a switch it might be used to debounce the
+trailing edge of the contact period.  
 ``tamper.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
 by the constructor.
 
@@ -566,7 +565,7 @@ The RTC supports two alarms 'A' and 'B' each of which can wake the Pyboard at pr
 Constructor: an alarm is instantiated with a single mandatory argument, 'A' or 'B'.
 Method ``timeset()`` Assuming at least one kw only argument is passed, this will start the timer and cause periodic
 interrupts to be generated. In the absence of arguments the timer will be disabled. Arguments default to ``None``.
-Arguments:
+Arguments (kwonly args):
  1. ``day_of_month`` 1..31 If present, alarm will occur only on that day
  2. ``weekday`` 1 (Monday) - 7 (Sunday) If present, alarm will occur only on that day of the week
  3. ``hour`` 0..23
@@ -584,34 +583,23 @@ mytimer.timeset(second = 30) # Wake up each time RTC seconds reads 30 i.e. once 
 Demonstrates various ways to wake up from standby and how to differentiate between them.
 
 To run this, edit your ``main.py`` to include ``import ttest``. Power the Pyboard from a source
-other than USB. It will flash the yellow LED after boot and the green and yellow ones every ten seconds
-in response to a timer wakeup. If pin X1 is pulled to 3V3 red and green will flash. If pin X18 is pulled
-low red will flash.
+other than USB. It will flash the red, yellow and green LEDs after boot and the green and yellow ones
+every ten seconds in response to a timer wakeup. If pin X1 is pulled to 3V3 red and green will flash.
+If pin X18 is pulled low red will flash. If a backup battery is in use and power to the board is
+cycled, power up events subsequent to the first will cause the yellow LED to flash.
+
+If a UART is initialised for REPL in boot.py the time of each event will be output.
+
+If an RTC backup battery is used and the Pyboard power is removed while a wakeup delay is pending. it
+will behave as follows. If power is re-applied before the delay times out, it will time out at the
+correct time. If power is applied after the time has passed two wakeups will occur soon after power
+up: the first caused by the power up, and the second by the deferred wakeup.
 
 ## Module alarm
 
 Demonstrates the RTC alarms. Runs both alarms concurrently, waking every 30 seconds and flashing
 LED's to indicate which timer has caused the wakeup. To run this, edit your ``main.py`` to include
 ``import alarm``. 
-
-## Final tip: checking firmware build
-
-In code intended for distribution consider including the folowing check to avoid spurious bug reports.
-
-```Python
-import os
-def buildcheck(tupTarget):
-    fail = True
-    if 'uname' in dir(os):
-        datestring = os.uname()[3]
-        date = datestring.split(' on')[1]
-        idate = tuple([int(x) for x in date.split('-')])
-        fail = idate < tupTarget
-    if fail:
-        raise OSError('This driver requires a firmware build dated {:4d}-{:02d}-{:02d} or later'.format(*tupTarget))
-
-buildcheck((2015,10,21))
-```
 
 # Hardware
 

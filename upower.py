@@ -1,6 +1,8 @@
 # upower.py Enables access to functions useful in low power Pyboard projects
 # Copyright 2015 Peter Hinch
-# V0.2 17th November 2015
+# This code is released under the MIT licence
+
+# V0.25 18th November 2015
 
 # http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
 import pyb, stm, os, utime, uctypes
@@ -20,8 +22,18 @@ def buildcheck(tupTarget):
 
 buildcheck((2015,10,9)) # Bug in earlier versions made lpdelay() unpredictable, also issue with standby > 5 mins.
 
+usb_connected = False
+if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
+    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+    if not usb_connected:
+        pyb.usb_mode(None)                      # Save power
+
+def cprint(*args, **kwargs):                    # Conditional print: USB fails if low power modes are used
+    if not usb_connected:                       # assume a UART has been specified in boot.py
+        print(*args, **kwargs)
+
 @micropython.asm_thumb
-def ctz(r0):                                    # Count the trailing zeros in an integer
+def ctz(r0):                                   # Count the trailing zeros in an integer
     rbit(r0, r0)
     clz(r0, r0)
 
@@ -57,7 +69,8 @@ rtcregs = RTC_Regs()
 rtc = pyb.RTC()
 
 # ***** LOW POWER pyb.delay() ALTERNATIVE *****
-def lpdelay(ms, usb_connected = False):         # Low power delay. Note stop() kills USB
+def lpdelay(ms):                                # Low power delay. Note stop() kills USB
+    global usb_connected
     if usb_connected:
         pyb.delay(ms)
         return
@@ -107,10 +120,10 @@ class Tamper(object):
     def disable(self):
         stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask
 
-    def wait_inactive(self, usb_connected = False):
+    def wait_inactive(self):
         self._pinconfig()
         while self.pin.value() == self.triggerlevel: # Wait for pin to go logically off
-            lpdelay(50, usb_connected)
+            lpdelay(50)
 
     @property
     def pinvalue(self):
@@ -149,10 +162,10 @@ class wakeup_X1(object):                                # Support wakeup on low-
     def disable(self):
         stm.mem32[stm.PWR + stm.PWR_CSR] &= 0xfffffeff  # Disable wakeup
 
-    def wait_inactive(self, usb_connected = False):
+    def wait_inactive(self):
         self._pinconfig()
         while self.pin.value() == 1:                    # Wait for pin to go low
-            lpdelay(50, usb_connected)
+            lpdelay(50)
 
     @property
     def pinvalue(self):
@@ -297,16 +310,14 @@ def ms_left(delta, addr = 1021):
     start_ms = 1000*bkpram[addr] + bkpram[addr +1]
     now_secs, now_millis = now()
     now_ms = 1000* now_secs + now_millis
-    result = max(start_ms + delta - now_ms, 0)
+    result = max(start_ms + delta - now_ms, 0)  # avoid -ve results where time was missed (e.g. power outage)
     if result > delta:
         raise RTCError("Invalid saved time data.")
     return result
 
-usb_connected = False
-if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
-    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
-    if not usb_connected:
-        pyb.usb_mode(None)                      # Save power
+def battery_volts():
+    adc = pyb.ADCAll(12)
+    return adc.read_core_vbat(), 3.3/(adc.read_core_vref()/1.21)
 
 def ms_set(): # For debug purposes only. Decodes outcome of setting rtc.wakeup().
     dividers = (16, 8, 4, 2)
