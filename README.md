@@ -383,7 +383,7 @@ The module provides the following functions:
  ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021).
  6. ``cprint`` Same usage as ``print`` but does nothing if USB is connected.
  7. ``battery_volts`` No args. Returns Vbat and Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
- Lower values may indicate a failing battery
+ Lower values respectively indicate a failing RTC backup battery or a Vin which has dropped below 3.3V.
 
 The module instantiates the following objects, which are available for access.
  1. ``rtc`` Instance of pyb.rtc().
@@ -391,7 +391,7 @@ The module instantiates the following objects, which are available for access.
  3. ``rtcregs`` Object providing access to the backup registers.
  4. ``tamper`` Object enabling wakeup from the Tamper pin X18.
  5. ``wkup`` Object enabling wakeup from a positive edge on pin X1.
- 6. ``usb_connected`` A boolean, True if REPL via USB is enabled and a physical USB connection
+ 6. ``usb_connected`` A boolean, ``True`` if REPL via USB is enabled and a physical USB connection
  is in place.
 
 The module provides the ``alarm`` class providing access to the two RTC alarms.
@@ -499,15 +499,14 @@ if not upower.usb_connected:
     pyb.standby()
 ```
 
-The wkup object has the following methods and properties.  
+The ``wkup`` object has the following methods and properties.  
 ``wkup.enable()`` enables the wkup interrupt. Call just before issuing ``pyb.standby()`` and after
 the use of any other wkup methods as it reconfigures the pin.  
 ``wkup. wait_inactive()`` No arguments. This function returns when pin X1 has returned low. This might be
 used to debounce the trailing edge of the contact period: call ``lpdelay(50)`` after the function returns
 and before entering standby to ensure that contact bounce is over.  
 ``wkup.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
-by the constructor.
-
+by the constructor.  
 ``wkup.pinvalue`` Property returning the value of the signal on the pin: 0 is low, 1 high.
 
 ### Tamper pin X18 (``tamper`` object)
@@ -522,7 +521,7 @@ Note that in edge triggered mode the pin behaves as a normal input with no pullu
 switch, you must provide a pullup (to 3V3) or pulldown as appropriate.
 
 ``tamper.setup()`` accepts the following arguments:
- 1. ``level`` Mandatory Valid options 0 or 1. In level triggered mode, determines the active level.
+ 1. ``level`` Mandatory: valid options 0 or 1. In level triggered mode, determines the active level.
  In edge triggered mode, 0 indicates rising edge trigger, 1 falling edge. Optional kwonly args:
  2. ``freq `` Valid options 1, 2, 4, 8, 16, 32, 64, 128: polling frequency in Hz. Default 16.
  3. ``samples`` Valid options 2, 4, 8: number of consecutive samples before wakeup occurs. Default 2.
@@ -530,7 +529,7 @@ switch, you must provide a pullup (to 3V3) or pulldown as appropriate.
 
 ``tamper.enable()`` enables the tamper interrupt. Call just before issuing ``pyb.standby()`` and after
 the use of any other methods as it reconfigures the pin.  
-``tamper. wait_inactive()`` No arguments. This function returns when pin X18 has returned to its inactive
+``tamper.wait_inactive()`` No arguments. This function returns when pin X18 has returned to its inactive
 state. In level triggered mode this may be called before issuing ``tamper.enable()`` to avoid recurring
 interrupts. In edge triggered mode where the signal is from a switch it might be used to debounce the
 trailing edge of the contact period.  
@@ -573,7 +572,7 @@ cycled, power up events subsequent to the first will cause the yellow LED to fla
 
 If a UART is initialised for REPL in boot.py the time of each event will be output.
 
-If an RTC backup battery is used and the Pyboard power is removed while a wakeup delay is pending. it
+If an RTC backup battery is used and the Pyboard power is removed while a wakeup delay is pending it
 will behave as follows. If power is re-applied before the delay times out, it will time out at the
 correct time. If power is applied after the time has passed two wakeups will occur soon after power
 up: the first caused by the power up, and the second by the deferred wakeup.
