@@ -4,6 +4,9 @@ firmware dated 21st October 2015. Earlier versions had issues affecting the real
 this is a minimum requirement: later versions offer improved RTC accuracy and it is recommended that the
 latest version be used.
 
+6 Dec 2015 amended to reflect improvements in Pyboard V1.1. Users of V1.0 Pyboards should note that the
+standby current of this version is approximately 30uA as against 6uA for the later version.
+
 # Abstract
 
 These notes describe some issues involved in minimising power draw in Pyboard based systems. A
@@ -13,7 +16,7 @@ readily be used with other devices. Some calculations are presented suggesting l
 that might be achieved from various types of batteries.
 
 The power overheads of the Pyboard are discussed and measurements presented. These overheads comprise the
-consumption of the voltage regulator and the charge required to recover from standby and to load and compile
+standby power consumption and the charge required to recover from standby and to load and compile
 typical application code.
 
 A module ``upower.py`` is provided giving access to features useful in low power applications but not
@@ -32,10 +35,9 @@ photovoltaic cells.
 ## Standby mode
 
 To achieve minimum power the code must be designed so that the Pyboard spends the majority of its time in
-standby mode. In this mode the current drawn by the MPU drops to some 4uA. The Pyboard draws about
-30uA largely owing to the onboard LDO voltage regulator which cannot (without surgery) be disabled. Note that
-on recovery from standby the code will be loaded and run from the start: program state is not retained.
-Limited state information can be retained in the RTC backup registers: in the example below one is used to detect
+standby mode. In this mode the current drawn by the Pyboard drops to some 6uA. Note that on recovery from
+standby the code will be loaded and run from the start: program state is not retained. Limited state
+information can be retained in the RTC backup registers: in the example below one is used to detect
 whether the program has run because of an initial power up or in response to an RTC interrupt. A
 typical application will use code along these lines:
 
@@ -71,7 +73,7 @@ a wakeup pin input. See below for support for these in ``upower.py``.
 
 ## Nonvolatile memory and storage in standby
 
-To obtain the 30uA current it is necessary to use the internal flash memory for program storage rather than
+To achieve the 6uA standby current it is necessary to use the internal flash memory for program storage rather than
 an SD card as SD cards draw significant standby current. The value varies with manufacturer but tends to dwarf
 the current draw of the Pyboard - 200uA is common. 
 
@@ -109,12 +111,10 @@ the Pyboard has pullup resistors on these pins which will source current into th
 even when the latter is powered down. The simplest solution is to switch Vdd as in the above schematic
 and also to provide switches in series with the relevant GPIO pins to enable them to be put into a high
 impedance state. The current consumed by the connected hardware when the Pyboard is in standby is then
-negligible compared to the total current draw of 29uA. This (from datasheet values) comprises 4uA for the
-microprocessor and 25uA for the LDO regulator.
+negligible compared to the total current draw of 6uA.
 
-This can be reduced further by disabling or removing the LDO regulator: I have measured 7uA offering the
-possibility of a year's operation from a CR2032 button cell. In practice achieving this is dependent on the
-frequency and duration of power up events.
+This level of power consumption offers the possibility of a year's operation from a CR2032 button cell.
+In practice achieving this is dependent on the frequency and duration of power up events.
 
 ## Design details
 
@@ -197,20 +197,6 @@ in the device constructor. However existing drivers are unlikely to do this. Con
 ``PowerController`` does this on power down. I don't know of a similar issue with SPI, but the driver
 de-initialises this on a precautionary basis.
 
-# Pyboard modification
- 
-For the very lowest power consumption the LDO regulator should be removed from the Pyboard. Doing this
-will doubtless void your warranty and commits you to providing a 3.3V power supply even when connecting
-to the Pyboard with USB. The regulator is the rectangular component with five leads located near the
-X3 pins [here](http://micropython.org/static/resources/pybv10-pinout.jpg).
-
-A more readily reversible alternative to removal is to lift pin 3 (the pin on the bottom row nearest
-to X3 on the above diagram) and link it to gnd.
-
-Note that even with the regulator operational the Pyboard can be powered by applying 3.3V to its 3V3 pin.
-There is little point in doing so as the regulator continues to draw current by virtue of an internal
-diode linking its Vout pin to Vin.
-
 # Some numbers
 
 The capacity of small batteries is measured in milliamp hours (mAH), a measure of electric charge. For
@@ -218,14 +204,13 @@ purposes of measurement on the Pyboard this is rather a large unit, and milliamp
 millicoulomb is used here. 1mAH = 3600mAS. Note that, because the Pyboard uses a linear voltage regulator,
 the amount of current (and hence charge) used in any situation is substantially independent of battery voltage.
  
-After executing ``pyb.standby()`` and with the regulator non-operational the Pyboard consumes about 7uA.
-In a year's running this corrsponds to an charge utilisation of 61mAH, compared to the 225mAH nominal
-capacity of a CR2032 cell. With the regulator running, the current of 30uA corresponds to 260mAH per annum.
+After executing ``pyb.standby()`` the Pyboard consumes about 6uA. In a year's running this corrsponds to a
+charge utilisation of 53mAH, compared to the 225mAH nominal capacity of a CR2032 cell.
  
 @moose measured the startup charge required by the Pyboard [here](http://forum.micropython.org/viewtopic.php?f=6&t=607).
 This corresponds to about 9mAS or 0.0025mAH. If we start every ten minutes, annual consumption from
 startup events is  
-0.0025 x 6 x 24 x 365 = 131mAH. Adding the 61mAH from standby gives 192mAH, close to the
+0.0025 x 6 x 24 x 365 = 131mAH. Adding the 53mAH from standby gives 184mAH, close to the
 capacity of the cell. This sets an upper bound on the frequency of power up events to achieve the notional
 one year runtime, although this could be doubled with an alternative button cell (see below). Two use cases,
 where the Pyboard performs a task on waking up, are studied below.
@@ -241,9 +226,8 @@ when Vdd switches on: this is caused by the charging of decoupling capacitors on
 
 On my estimate the charge used each time the Pyboard wakes from standby is about 23mAS (comprising
 some 16mAS to boot up and 7mAS to read and transmit the data). If this ran once per hour the annual
-charge use would be 23 x 24 x 365/3600 mAH = 56mAH to which must be added the standby figure of 61mAH or
-260mAH depending on whether the regulator is employed. One year's use with a CR2032 would seem feasible
-with the regulator disabled.
+charge use would be 23 x 24 x 365/3600 mAH = 56mAH to which must be added the standby figure of 53mAH.
+One year's use with a CR2032 would seem feasible.
 
 The code is listed to indicate the approach used and to clarify my observations on charge usage.
 It is incomplete as I have not documented the slave end of the link or the ``radio`` module.
@@ -348,16 +332,15 @@ else:
 
 Modules epaper and micropower located [here](https://github.com/peterhinch/micropython-epaper.git).
 
-This used an average of 85mA for 6S to do an update. Based on a disabled regulator, if the script
-performed one refresh per hour this would equate to  
-85 x 6/3600 = 141uA average + 7uA quiescent = 148uA. This would exhaust a CR2032 in 9 weeks. An
+This used an average of 85mA for 6S to do an update. If the script performed one refresh per hour
+this would equate to  
+85 x 6/3600 = 141uA average + 6uA quiescent = 147uA. This would exhaust a CR2032 in 9 weeks. An
 alternative is the larger CR2450 button cell with 540mAH capacity which would provide 5 months
 running.
 
-A year's running would be achievable if the circuit were powered from three AA alkaline cells - owing
-to the 4.5V nominal output the regulator would be required in this instance:
+A year's running would be achievable if the circuit were powered from three AA alkaline cells:
 
-Power = 141uA + 29uA quiescent = 170uA x 24 x 365 = 1.5AH which is within the nominal capacity of
+Power = 141uA + 6uA quiescent = 147uA x 24 x 365 = 1.28AH which is within the nominal capacity of
 these cells.
 
 # Coding tips and the upower module
@@ -562,10 +545,10 @@ See ``ttest.py`` for an example of its usage.
 
 The RTC supports two alarms 'A' and 'B' each of which can wake the Pyboard at programmed intervals.
 
-Constructor: an alarm is instantiated with a single mandatory argument, 'A' or 'B'.
+Constructor: an alarm is instantiated with a single mandatory argument, 'A' or 'B'.  
 Method ``timeset()`` Assuming at least one kw only argument is passed, this will start the timer and cause periodic
-interrupts to be generated. In the absence of arguments the timer will be disabled. Arguments default to ``None``.
-Arguments (kwonly args):
+interrupts to be generated. In the absence of arguments the timer will be disabled. Arguments default to ``None``.  
+Arguments (kwonly args):  
  1. ``day_of_month`` 1..31 If present, alarm will occur only on that day
  2. ``weekday`` 1 (Monday) - 7 (Sunday) If present, alarm will occur only on that day of the week
  3. ``hour`` 0..23
@@ -611,5 +594,4 @@ Hardware as used for tests of power switched peripherals.
 
 When designing a board intended for micropower operation, consider incorporating a MOSFET to provide a
 switched 3.3V supply for peripherals. Pullups can either be powered from this switched supply, or for
-greater flexibility driven from a separately controlled MOSFET. In addition, there are now voltage
-regulators with lower quiescent current than that used in the Pyboard V1.0. (e.g. MCP1703A).
+greater flexibility driven from a separately controlled MOSFET.
