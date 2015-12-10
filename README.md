@@ -384,6 +384,7 @@ The module provides the following functions:
  6. ``cprint`` Same usage as ``print`` but does nothing if USB is connected.
  7. ``battery_volts`` No args. Returns Vbat and Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
  Lower values respectively indicate a failing RTC backup battery or a Vin which has dropped below 3.3V.
+ Beware. This uses pyb.ADCAll() which has the side effect of configuring all ADC pins as inputs.
 
 The module instantiates the following objects, which are available for access.
  1. ``rtc`` Instance of pyb.rtc().
