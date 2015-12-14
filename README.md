@@ -469,21 +469,23 @@ ba = bkpram.get_bytearray()
 ba[4] = 0 # or as a bytearray
 ```
 
-The following code fragment illustrates the use of JSON to save an arbitrary Python object to
-backup RAM and restore it on a subsequent wakeup. Usage with the pickle module in the MicroPython
-library is similar and produces almost identical data volumes.
+The following code fragment illustrates the use of pickle to save an arbitrary Python object to
+backup RAM and restore it on a subsequent wakeup. The pickle module is available in the MicroPython
+library.
 
 ```python
+import pickle
 from upower import bkpram
 a = {'rats':77, 'dogs':99,'elephants':9, 'zoo':100}
-z = json.dumps(a).encode('utf8')
+z = pickle.dumps(a).encode('utf8')
 ba = bkpram.get_bytearray()
 bkpram[0] = len(z)
 ba[4: 4+len(z)] = z # Copy into backup RAM
  # Resumption after standby
+import pickle
 from upower import bkpram
 ba = bkpram.get_bytearray()
-a = json.loads(bytes(ba[4:4+bkpram[0]]).decode("utf-8")) # retrieve dictionary
+a = pickle.loads(bytes(ba[4:4+bkpram[0]]).decode('utf-8')) # retrieve dictionary
 ```
 
 ### Wakeup pin X1 (``wkup`` object)
