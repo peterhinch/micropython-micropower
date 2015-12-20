@@ -363,11 +363,14 @@ on ``pyb.delay()`` reducing clock rate will help, but see below for an alternati
 
 ## Module upower
 
-This module provides ways of accessing features not supported by the firmware at the time of writing.
-Check for official support before using. The module requires a firmware build dated
-21st October 2015 or later and an OSError will be raised if this condition is not met. Later builds
-improve RTC accuracy when standby is used. Note that the module uses the topmost three addresses of
-the backup RAM (1021-1923 inclusive).
+This module is something of a hack, in that it breaks various Python conventions. In essence it's
+a workround for accessing objects not yet officially exposed. Check for official support before using.
+It can be used "as is" or as a source of code for your own use. Unorthodox features: on import
+it initialises hardware, instantiates classes and exports the object instances.
+
+The module requires a firmware build dated 21st October 2015 or later and an OSError will be raised
+if this condition is not met. Later builds improve RTC accuracy when standby is used. Note that the
+module uses the topmost three addresses of the backup RAM (1021-1923 inclusive).
 
 Note on objects in this module. Once ``rtc.wakeup()`` is issued, methods other than
 ``enable()`` should be avoided as some employ the RTC. Issue ``rtc.wakeup()`` shortly
@@ -401,7 +404,10 @@ The module provides the ``alarm`` class providing access to the two RTC alarms.
 
 This function accepts one argument: a delay in mS and is a low power replacement for ``pyb.delay()``.
 The function normally uses ``pyb.stop`` to reduce power consumption from 20mA to 500uA. If USB
-is connected it reverts to ``pyb.delay`` to avoid killing the USB connection.
+is connected it reverts to ``pyb.delay`` to avoid killing the USB connection. There is a subtle
+issue when using this function: ``pyb`` loses all sense of time when the Pyboard is stopped. Consequently
+you can't use functions such as ``pyb.elapsed_millis`` to keep track of time in a loop. Use the RTC or
+count iterations.
 
 ### Function ``why()``
 
