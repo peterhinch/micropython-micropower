@@ -5,6 +5,7 @@
 # V0.25 18th November 2015
 
 # http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
+# TODO Should no longer need asm set_rtc_register() https://github.com/micropython/micropython/pull/1649
 import pyb, stm, os, utime, uctypes
 
 class RTCError(OSError):
@@ -298,6 +299,10 @@ def now():  # Return the current time from the RTC in secs and millisecs from ye
     if ms < 50:                                 # Might have just rolled over
         secs = utime.time()
     return secs, ms
+
+def lp_elapsed_ms(tuptime):                     # An elapsed_ms function which works during lpdelays
+    t = now()
+    return t[0] * 1000  + t[1] - tuptime[0] * 1000 - tuptime[1] 
 
 # Save the current time in mS 
 def savetime(addr = 1021):

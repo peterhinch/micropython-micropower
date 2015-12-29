@@ -378,14 +378,15 @@ before `pyb.standby``.
 
 The module provides the following functions:
  1. ``lpdelay`` A low power alternative to ``pyb.delay()``.
- 2. ``why`` Returns a string providing the cause of a wakeup.
+ 2. ``lp_elapsed_ms`` An alternative to ``pyb.elapsed_millis`` which works during ``lpdelay`` calls.
  3. ``now`` Returns RTC time in seconds and millisecs since the start of year 2000.
  4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1021 (uses 2 words).
  5. ``ms_left`` Enables a timed sleep or standby to be resumed after a tamper or WKUP interrupt.
  Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
  ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021).
- 6. ``cprint`` Same usage as ``print`` but does nothing if USB is connected.
- 7. ``battery_volts`` No args. Returns Vbat and Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
+ 6. ``why`` Returns a string providing the cause of a wakeup.
+ 7. ``cprint`` Same usage as ``print`` but does nothing if USB is connected.
+ 8. ``battery_volts`` No args. Returns Vbat and Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
  Lower values respectively indicate a failing RTC backup battery or a Vin which has dropped below 3.3V.
  Beware. This uses pyb.ADCAll() which has the side effect of configuring all ADC pins as inputs.
 
@@ -406,22 +407,20 @@ This function accepts one argument: a delay in mS and is a low power replacement
 The function normally uses ``pyb.stop`` to reduce power consumption from 20mA to 500uA. If USB
 is connected it reverts to ``pyb.delay`` to avoid killing the USB connection. There is a subtle
 issue when using this function: ``pyb`` loses all sense of time when the Pyboard is stopped. Consequently
-you can't use functions such as ``pyb.elapsed_millis`` to keep track of time in a loop. Use the RTC or
-count iterations.
+you can't use functions such as ``pyb.elapsed_millis`` to keep track of time in a loop. The simplest
+solution is to use the provided ``lp_elapsed_ms`` function.
 
-### Function ``why()``
+### Function ``lp_elapsed_ms()``
 
-On wakeup calling this will return one of the following strings:
- 1. 'BOOT' The Pyboard was powered up from cold.
- 2. 'POWERUP' Power re-applied to board with backup battery.
- 3. 'TAMPER' Woken by the ``tamper`` object (event on pin X18).
- 4. 'WAKEUP' Timer wakeup.
- 5. 'X1' Woken by a high going edge on pin X1.
- 6. 'ALARM_A' Woken by RTC alarm A.
- 7. 'ALARM_B' Woken by RTC alarm B.
- 8. returns None if none of the above apply.
+Accepts one argument, a start time tuple derived from the ``now`` function. Typical code to
+implement a one second timeout might be along these lines:
 
-The only time I've observed None is after the reset button is pressed.
+```python
+start = upower.now()
+while upower.lp_elapsed_ms(start) < 1000:
+    print(upower.lp_elapsed_ms(start)) # do something
+    upower.lpdelay(100)
+```
 
 ### Function ``now()``
 
@@ -429,6 +428,7 @@ Returns RTC time since the start of year 2000. Two integers are returned, the se
 value of milliseconds (from 0 to 999). The function is mainly intended for use in
 implementing sleep or standby delays which can be resumed after an interrupt from tamper or WKUP.
 Millisecond precision is meaningless in standby periods where wakeups are slow, but is relevant to sleep.
+Precision is limited to about 4mS owing to the RTC hardware.
 
 ### Function ``savetime()``
 
@@ -445,20 +445,19 @@ where a time was not saved or the RTC was adjusted after saving. The defensive c
 
 The test program ``ttest.py`` illustrates its use.
 
-### RTC Backup registers (``rtcregs`` object)
+### Function ``why()``
 
-The real time clock supports 20 32-bit backup registers whose contents are maintained when in any
-of the low power modes. These may be accessed as an integer array as follows:
+On wakeup calling this will return one of the following strings:
+ 1. 'BOOT' The Pyboard was powered up from cold.
+ 2. 'POWERUP' Power re-applied to board with backup battery.
+ 3. 'TAMPER' Woken by the ``tamper`` object (event on pin X18).
+ 4. 'WAKEUP' Timer wakeup.
+ 5. 'X1' Woken by a high going edge on pin X1.
+ 6. 'ALARM_A' Woken by RTC alarm A.
+ 7. 'ALARM_B' Woken by RTC alarm B.
+ 8. returns None if none of the above apply.
 
-```python
-import pyb
-from upower import rtcregs
-rtcregs[5] = 1234
-```
-
-Registers are initialised to zero after power up and also after a tamper event. The current firmware
-uses none of these registers but there has been discussion of using the higher numbered registers to
-store system state: check the current firmware documentation.
+The only time I've observed None is after the reset button is pressed.
 
 ### Backup RAM (``bkpram`` object)
 
