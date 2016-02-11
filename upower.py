@@ -2,11 +2,18 @@
 # Copyright 2015 Peter Hinch
 # This code is released under the MIT licence
 
-# V0.25 18th November 2015
+# V0.3 18th February 2016
 
 # http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
-# TODO Should no longer need asm set_rtc_register() https://github.com/micropython/micropython/pull/1649
 import pyb, stm, os, utime, uctypes
+
+def singleton(cls):
+    instances = {}
+    def getinstance():
+        if cls not in instances:
+            instances[cls] = cls()
+        return instances[cls]
+    return getinstance
 
 class RTCError(OSError):
     pass
@@ -21,7 +28,7 @@ def buildcheck(tupTarget):
     if fail:
         raise OSError('This driver requires a firmware build dated {:4d}-{:02d}-{:02d} or later'.format(*tupTarget))
 
-buildcheck((2015,10,9)) # Bug in earlier versions made lpdelay() unpredictable, also issue with standby > 5 mins.
+buildcheck((2016,02,11)) # allow 32 bit write to stm register
 
 usb_connected = False
 if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
@@ -39,6 +46,8 @@ def ctz(r0):                                   # Count the trailing zeros in an 
     clz(r0, r0)
 
 # ***** BACKUP RAM SUPPORT *****
+
+@singleton
 class BkpRAM(object):
     BKPSRAM = 0x40024000
     def __init__(self):
@@ -55,10 +64,10 @@ class BkpRAM(object):
     def get_bytearray(self):
         return uctypes.bytearray_at(self.BKPSRAM, 4096)
 
-bkpram = BkpRAM()
-
 # ***** RTC REGISTERS *****
-class RTC_Regs(object):
+
+@singleton
+class RTCRegs(object):
     def __getitem__(self, idx):
         assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
         return stm.mem32[stm.RTC + stm.RTC_BKP0R+ idx * 4]
@@ -66,12 +75,11 @@ class RTC_Regs(object):
         assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
         stm.mem32[stm.RTC + stm.RTC_BKP0R + idx * 4] = val
 
-rtcregs = RTC_Regs()
-rtc = pyb.RTC()
 
 # ***** LOW POWER pyb.delay() ALTERNATIVE *****
 def lpdelay(ms):                                # Low power delay. Note stop() kills USB
     global usb_connected
+    rtc = pyb.RTC()
     if usb_connected:
         pyb.delay(ms)
         return
@@ -80,6 +88,8 @@ def lpdelay(ms):                                # Low power delay. Note stop() k
     rtc.wakeup(None)
 
 # ***** TAMPER (X18) PIN SUPPORT *****
+
+@singleton
 class Tamper(object):
     def __init__(self):
         self.edge_triggered = False
@@ -142,9 +152,9 @@ class Tamper(object):
         stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # Clear power wakeup flag WUF
         stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask | 5 # Tamper interrupt enable and tamper1 enable
 
-tamper = Tamper()
-
 # ***** WKUP PIN (X1) SUPPORT *****
+
+@singleton
 class wakeup_X1(object):                                # Support wakeup on low-high edge on pin X1
     def __init__(self):
         self.disable()
@@ -173,13 +183,8 @@ class wakeup_X1(object):                                # Support wakeup on low-
         self._pinconfig()
         return self.pin.value()
 
-wkup = wakeup_X1()
-
 # ***** RTC TIMER SUPPORT *****
-def bcd(x): # integer to BCD (2 digit max)
-    return (x % 10) + ((x//10) << 4)
 
-# Enables values with top bits set to be written to RTC registers
 @micropython.asm_thumb
 def set_rtc_register(r0, r1, r2):               # MS word, LS word, offset address of register
     mov(r3, 16)
@@ -190,7 +195,10 @@ def set_rtc_register(r0, r1, r2):               # MS word, LS word, offset addre
     orr(r2, r3)
     str(r0, [r2, 0])
 
-class alarm(object):
+def bcd(x): # integer to BCD (2 digit max)
+    return (x % 10) + ((x//10) << 4)
+
+class Alarm(object):
     instantiated = False
     def __init__(self, ident):
         assert ident in ('a','A','b','B'), "Ident must be 'A' or 'B'"
@@ -209,9 +217,9 @@ class alarm(object):
             self.albit = 2
         self.uval = 0
         self.lval = 0
-        if not alarm.instantiated:
+        if not Alarm.instantiated:
             BIT17 = 1 << 17
-            alarm.instantiated = True
+            Alarm.instantiated = True
             stm.mem32[stm.EXTI + stm.EXTI_IMR] |= BIT17     # Set up ext interrupt
             stm.mem32[stm.EXTI + stm.EXTI_RTSR] |= BIT17    # Rising edge
             stm.mem32[stm.EXTI + stm.EXTI_PR] |= BIT17      # Clear pending bit
@@ -259,7 +267,8 @@ class alarm(object):
             return
         pyb.delay(5)
         if stm.mem32[stm.RTC + stm.RTC_ISR] & self.albit :  # test ALRxWF IN RTC_ISR
-            set_rtc_register(self.uval, self.lval, self.alreg)
+#            set_rtc_register(self.uval, self.lval, self.alreg)
+            stm.mem32[stm.RTC + self.alreg] = self.lval + (self.uval << 16) # still broken
             stm.mem32[stm.RTC + stm.RTC_ISR] &= self.alisr  # Clear the RTC alarm ALRxF flag
             stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # Clear the PWR Wakeup (WUF) flag
             stm.mem32[stm.RTC+stm.RTC_CR] |= self.alenable  # Enable the RTC alarm and interrupt
@@ -270,6 +279,7 @@ class alarm(object):
 # Return the reason for a wakeup event. Note that boot detection uses the last word of backup RAM.
 def why():
     result = None
+    bkpram = BkpRAM()
     if stm.mem32[stm.PWR+stm.PWR_CSR] & 2 == 0:
         if bkpram[1023] != 0x27288a6f:
             result = 'BOOT'
@@ -294,6 +304,7 @@ def why():
     return result
 
 def now():  # Return the current time from the RTC in secs and millisecs from year 2000
+    rtc = pyb.RTC()
     secs = utime.time()
     ms = 1000*(255 -rtc.datetime()[7]) >> 8
     if ms < 50:                                 # Might have just rolled over
@@ -306,10 +317,12 @@ def lp_elapsed_ms(tuptime):                     # An elapsed_ms function which w
 
 # Save the current time in mS 
 def savetime(addr = 1021):
+    bkpram = BkpRAM()
     bkpram[addr], bkpram[addr +1] = now()
 
 # Return the number of mS outstanding from a delay of delta mS
 def ms_left(delta, addr = 1021):
+    bkpram = BkpRAM()
     if not (bkpram[addr +1] <= 1000 and bkpram[addr +1] >= 0):
         raise RTCError("Time data not saved.")
     start_ms = 1000*bkpram[addr] + bkpram[addr +1]
@@ -320,6 +333,41 @@ def ms_left(delta, addr = 1021):
         raise RTCError("Invalid saved time data.")
     return result
 
+def adcread(chan):                              # 16 temp 17 vbat 18 vref
+    assert chan >= 16 and chan <= 18, 'Invalid channel'
+    start = pyb.millis()
+    timeout = 100
+    stm.mem32[stm.RCC + stm.RCC_APB2ENR] |= 0x100 # enable ADC1 clock.0x4100
+    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 1       # Turn on ADC
+    stm.mem32[stm.ADC1 + stm.ADC_CR1] = 0       # 12 bit
+    if chan == 17:
+        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x200000 # 15 cycles channel 17
+        stm.mem32[stm.ADC + 4] = 1 << 23
+    elif chan == 18:
+        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x1000000 # 15 cycles channel 18 0x1200000
+        stm.mem32[stm.ADC + 4] = 0xc00000
+    else:
+        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x40000 # 15 cycles channel 16
+        stm.mem32[stm.ADC + 4] = 1 << 23
+    stm.mem32[stm.ADC1 + stm.ADC_SQR3] = chan
+    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 1 | (1 << 30) | (1 << 10) # start conversion
+    while not stm.mem32[stm.ADC1 + stm.ADC_SR] & 2: # wait for EOC
+        if pyb.elapsed_millis(start) > timeout:
+            raise OSError('ADC timout')
+    data = stm.mem32[stm.ADC1 + stm.ADC_DR]     # clears down EOC
+    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 0       # Turn off ADC
+    return data
+
+def v33():
+    return 4096 * 1.21 /adcread(17)
+
+def vbat():
+    return  1.21 * 2 * adcread(18) / adcread(17)  # 2:1 divider on Vbat channel
+
+def temperature():
+    return (3.3 * adcread(16) / 4096 - 0.76) / 0.0025 + 25
+
+# ********** OLD API AND TEST CODE **********
 def battery_volts():
     adc = pyb.ADCAll(12)
     return adc.read_core_vbat(), 3.3/(adc.read_core_vref()/1.21)

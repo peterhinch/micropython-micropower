@@ -363,18 +363,20 @@ on ``pyb.delay()`` reducing clock rate will help, but see below for an alternati
 
 ## Module upower
 
-This module is something of a hack, in that it breaks various Python conventions. In essence it's
-a workround for accessing objects not yet officially exposed. Check for official support before using.
-It can be used "as is" or as a source of code for your own use. Unorthodox features: on import
-it initialises hardware, instantiates classes and exports the object instances.
+This module is a workround for accessing objects not yet officially exposed. Check for official
+support before using. It can be used "as is" or as a source of code for your own use.
 
-The module requires a firmware build dated 21st October 2015 or later and an OSError will be raised
+The module requires a firmware build dated 27th November 2015 or later and an OSError will be raised
 if this condition is not met. Later builds improve RTC accuracy when standby is used. Note that the
 module uses the topmost three addresses of the backup RAM (1021-1923 inclusive).
 
 Note on objects in this module. Once ``rtc.wakeup()`` is issued, methods other than
 ``enable()`` should be avoided as some employ the RTC. Issue ``rtc.wakeup()`` shortly
 before `pyb.standby``.
+
+The module provides a single global variable:  
+``usb_connected`` A boolean, ``True`` if REPL via USB is enabled and a physical USB connection
+ is in place.
 
 The module provides the following functions:
  1. ``lpdelay`` A low power alternative to ``pyb.delay()``.
@@ -386,20 +388,23 @@ The module provides the following functions:
  ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021).
  6. ``why`` Returns a string providing the cause of a wakeup.
  7. ``cprint`` Same usage as ``print`` but does nothing if USB is connected.
- 8. ``battery_volts`` No args. Returns Vbat and Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
- Lower values respectively indicate a failing RTC backup battery or a Vin which has dropped below 3.3V.
- Beware. This uses pyb.ADCAll() which has the side effect of configuring all ADC pins as inputs.
+ 8. ``v33`` No args. Returns Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
+ Lower values indicate a Vin which has dropped below 3.3V typically due to a failing battery.
+ 9. ``vbat`` Returns the backup battery voltage (if fitted).
+ 10. ``temperature`` Returns the chip temperature in deg C. Note that the chip datasheet points out
+ that the absolute accuracy of this is poor, varies greatly from one chip to another, and is best
+ suited for monitoring changes in temperature. It fails if the 3.3V supply drops out of spec.
 
-The module instantiates the following objects, which are available for access.
- 1. ``rtc`` Instance of pyb.rtc().
- 2. ``bkpram`` Object providing access to the backup RAM.
- 3. ``rtcregs`` Object providing access to the backup registers.
- 4. ``tamper`` Object enabling wakeup from the Tamper pin X18.
- 5. ``wkup`` Object enabling wakeup from a positive edge on pin X1.
- 6. ``usb_connected`` A boolean, ``True`` if REPL via USB is enabled and a physical USB connection
- is in place.
+Items 8-10 avoid the drawbacks of the ``pyb.ADCAll`` class. This turns all available pins into ADC
+inputs. Further its ``read_core_vbat()`` method returns incorrect results if the 3.3V supply is low
+for example due to a failing battery.
 
-The module provides the ``alarm`` class providing access to the two RTC alarms.
+The module provides the following classes:  
+ 1. ``Alarm`` Provides access to the two RTC alarms.
+ 2. ``BkpRAM`` Provides access to the backup RAM.
+ 3. ``RTC_Regs`` Provides access to the backup registers.
+ 4. ``Tamper`` Enables wakeup from the Tamper pin X18.
+ 5. ``wakeup_X1`` Enables wakeup from a positive edge on pin X1.
 
 ### Function ``lpdelay()``
 
@@ -459,96 +464,7 @@ On wakeup calling this will return one of the following strings:
 
 The only time I've observed None is after the reset button is pressed.
 
-### Backup RAM (``bkpram`` object)
-
-This object enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
-bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
-Like all RAM its initial contents after power up are arbitrary unless an RTC backup battery is used.
-Note that ``savetime()`` uses two 32 bit words at 1021 and 1022 by default and startup detection
-uses 1023 so these top three locations should normally be avoided.
-
-```python
-from upower import bkpram
-bkpram[0] = 22 # use as integer array
-ba = bkpram.get_bytearray()
-ba[4] = 0 # or as a bytearray
-```
-
-The following code fragment illustrates the use of pickle to save an arbitrary Python object to
-backup RAM and restore it on a subsequent wakeup. The pickle module is available in the MicroPython
-library.
-
-```python
-import pickle
-from upower import bkpram
-a = {'rats':77, 'dogs':99,'elephants':9, 'zoo':100}
-z = pickle.dumps(a).encode('utf8')
-ba = bkpram.get_bytearray()
-bkpram[0] = len(z)
-ba[4: 4+len(z)] = z # Copy into backup RAM
- # Resumption after standby
-import pickle
-from upower import bkpram
-ba = bkpram.get_bytearray()
-a = pickle.loads(bytes(ba[4:4+bkpram[0]]).decode('utf-8')) # retrieve dictionary
-```
-
-### Wakeup pin X1 (``wkup`` object)
-
-Enabling this converts pin X1 into an input with a pulldown resistor enabled even in standby mode. A low to
-high transition will wake the Pyboard from standby. The following code fragment illustrates its use.
-A complete example is in ``ttest.py``.
-
-```python
-from upower import wkup
-  # code omitted
-wkup.enable()
-if not upower.usb_connected:
-    pyb.standby()
-```
-
-The ``wkup`` object has the following methods and properties.  
-``wkup.enable()`` enables the wkup interrupt. Call just before issuing ``pyb.standby()`` and after
-the use of any other wkup methods as it reconfigures the pin.  
-``wkup. wait_inactive()`` No arguments. This function returns when pin X1 has returned low. This might be
-used to debounce the trailing edge of the contact period: call ``lpdelay(50)`` after the function returns
-and before entering standby to ensure that contact bounce is over.  
-``wkup.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
-by the constructor.  
-``wkup.pinvalue`` Property returning the value of the signal on the pin: 0 is low, 1 high.
-
-### Tamper pin X18 (``tamper`` object)
-
-This is a flexible way to interrupt a standby condition, providing for edge or level detection the
-latter with hardware switch debouncing. Level detection operates as follows. The pin is normally
-high impedance. At intervals a pullup resistor is connected and the pin state sampled. After a given
-number of such intervals, if the pin continues to be in the active state, the Pyboard is woken. The
-active state, polling frequency and number of samples may be configured using ``tamper.setup()``.
-
-Note that in edge triggered mode the pin behaves as a normal input with no pullup. If driving from a
-switch, you must provide a pullup (to 3V3) or pulldown as appropriate.
-
-``tamper.setup()`` accepts the following arguments:
- 1. ``level`` Mandatory: valid options 0 or 1. In level triggered mode, determines the active level.
- In edge triggered mode, 0 indicates rising edge trigger, 1 falling edge. Optional kwonly args:
- 2. ``freq `` Valid options 1, 2, 4, 8, 16, 32, 64, 128: polling frequency in Hz. Default 16.
- 3. ``samples`` Valid options 2, 4, 8: number of consecutive samples before wakeup occurs. Default 2.
- 4. ``edge`` Boolean. If True, the pin is edge triggered. ``freq`` and ``samples`` are ignored. Default False.
-
-``tamper.enable()`` enables the tamper interrupt. Call just before issuing ``pyb.standby()`` and after
-the use of any other methods as it reconfigures the pin.  
-``tamper.wait_inactive()`` No arguments. This function returns when pin X18 has returned to its inactive
-state. In level triggered mode this may be called before issuing ``tamper.enable()`` to avoid recurring
-interrupts. In edge triggered mode where the signal is from a switch it might be used to debounce the
-trailing edge of the contact period.  
-``tamper.disable()`` disables the interrupt. Not normally required as the interrupt is disabled
-by the constructor.
-
-``tamper.pinvalue`` Property returning the value of the signal on the pin: 0 is 0V regardless of ``level``
-
-See ``ttest.py`` for an example of its usage.
-
-### alarm class
+### ``Alarm`` class (access RTC alarms)
 
 The RTC supports two alarms 'A' and 'B' each of which can wake the Pyboard at programmed intervals.
 
@@ -567,6 +483,116 @@ mytimer.timeset(weekday = 1, hour = 17) # Wake at 17:00 every Monday
 mytimer.timeset(hour = 5) # Wake at 5am every day  
 mytimer.timeset(minute = 10, second = 30) # Wake up every hour at 10 mins, 30 secs after the hour  
 mytimer.timeset(second = 30) # Wake up each time RTC seconds reads 30 i.e. once per minute  
+
+### ``BkpRAM`` class (access Backup RAM)
+
+This class enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
+bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
+Like all RAM its initial contents after power up are arbitrary unless an RTC backup battery is used.
+Note that ``savetime()`` uses two 32 bit words at 1021 and 1022 by default and startup detection
+uses 1023 so these top three locations should normally be avoided.
+
+```python
+from upower import BkpRAM
+bkpram = BkpRAM()
+bkpram[0] = 22 # use as integer array
+ba = bkpram.get_bytearray()
+ba[4] = 0 # or as a bytearray
+```
+
+The following code fragment illustrates the use of pickle to save an arbitrary Python object to
+backup RAM and restore it on a subsequent wakeup. The pickle module is available in the MicroPython
+library.
+
+```python
+import pickle
+from upower import BkpRAM
+bkpram = BkpRAM()
+a = {'rats':77, 'dogs':99,'elephants':9, 'zoo':100}
+z = pickle.dumps(a).encode('utf8')
+ba = bkpram.get_bytearray()
+bkpram[0] = len(z)
+ba[4: 4+len(z)] = z # Copy into backup RAM
+ # Resumption after standby
+import pickle
+from upower import BkpRAM
+bkpram = BkpRAM()
+ba = bkpram.get_bytearray()
+a = pickle.loads(bytes(ba[4:4+bkpram[0]]).decode('utf-8')) # retrieve dictionary
+```
+
+### ``RTCRegs`` class (RTC Register access)
+
+The RTC has a set of 19 32-bit backup registers. These are initialised to zero on boot, and are
+also cleared down after a Tamper event. Registers may be accessed as follows:  
+
+```python
+from upower import RTCRegs
+rtcregs = RTCRegs()
+rtcregs[3] = 42
+
+### ``Tamper`` class (Enable wakeup onr pin X18)
+
+This is a flexible way to interrupt a standby condition, providing for edge or level detection the
+latter with hardware switch debouncing. Level detection operates as follows. The pin is normally
+high impedance. At intervals a pullup resistor is connected and the pin state sampled. After a given
+number of such intervals, if the pin continues to be in the active state, the Pyboard is woken. The
+active state, polling frequency and number of samples may be configured using ``tamper.setup()``.
+
+Note that in edge triggered mode the pin behaves as a normal input with no pullup. If driving from a
+switch, you must provide a pullup (to 3V3) or pulldown as appropriate.
+
+In use first instatiate the tamper object:
+
+```python
+from upower import Tamper
+tamper = Tamper()
+
+The class supports the following methods and properties:  
+``setup()`` method accepts the following arguments:
+ 1. ``level`` Mandatory: valid options 0 or 1. In level triggered mode, determines the active level.
+ In edge triggered mode, 0 indicates rising edge trigger, 1 falling edge. Optional kwonly args:
+ 2. ``freq `` Valid options 1, 2, 4, 8, 16, 32, 64, 128: polling frequency in Hz. Default 16.
+ 3. ``samples`` Valid options 2, 4, 8: number of consecutive samples before wakeup occurs. Default 2.
+ 4. ``edge`` Boolean. If True, the pin is edge triggered. ``freq`` and ``samples`` are ignored. Default False.
+
+``enable()`` method enables the tamper interrupt. Call just before issuing ``pyb.standby()`` and after
+the use of any other methods as it reconfigures the pin.  
+``tamper.wait_inactive()`` method returns when pin X18 has returned to its inactive
+state. In level triggered mode this may be called before issuing the ``enable()`` method to avoid recurring
+interrupts. In edge triggered mode where the signal is from a switch it might be used to debounce the
+trailing edge of the contact period.  
+``disable()`` method disables the interrupt. Not normally required as the interrupt is disabled
+by the constructor.
+
+``pinvalue`` property returning the value of the signal on the pin: 0 is 0V regardless of ``level``
+
+See ``ttest.py`` for an example of its usage.
+
+### ``wakeup_X1`` class (Enable wakeup using a high going edge on pin X1)
+
+Enabling this converts pin X1 into an input with a pulldown resistor enabled even in standby mode. A low to
+high transition will wake the Pyboard from standby. The following code fragment illustrates its use.
+A complete example is in ``ttest.py``.
+
+```python
+from upower import wakeup_X1
+wkup = wakeup_X1()
+  # code omitted
+wkup.enable()
+if not upower.usb_connected:
+    pyb.standby()
+```
+
+The ``wakeup_X1`` class has the following methods and properties.  
+``enable()`` enables the wkup interrupt. Call just before issuing ``pyb.standby()`` and after
+the use of any other wkup methods as it reconfigures the pin.  
+``wait_inactive()`` This method returns when pin X1 has returned low. This might be
+used to debounce the trailing edge of the contact period: call ``lpdelay(50)`` after the function returns
+and before entering standby to ensure that contact bounce is over.  
+``disable()`` disables the interrupt. Not normally required as the interrupt is disabled
+by the constructor.  
+``pinvalue`` Property returning the value of the signal on the pin: 0 is low, 1 high.
 
 ## Module ttest
 
