@@ -1,11 +1,13 @@
 # micropython-micropower
 Some ideas for building ultra low power systems based on the Pyboard. This document is based on Pyboard
-firmware dated 21st October 2015. Earlier versions had issues affecting the real time clock (RTC). Note
-this is a minimum requirement: later versions offer improved RTC accuracy and it is recommended that the
-latest version be used.
+firmware dated 11th February 2016 and Pyboard hardware V1.0 or V1.1.
 
-6 Dec 2015 amended to reflect improvements in Pyboard V1.1. Users of V1.0 Pyboards should note that the
+13th Feb 2015 upower.py updated to be less of a hack and to take advantage of firmware improvements.
+
+6 Dec 2015 this doc amended to reflect improvements in Pyboard V1.1. Users of V1.0 Pyboards should note that the
 standby current of this version is approximately 30uA as against 6uA for the later version.
+
+[license](./LICENSE)
 
 # Abstract
 
@@ -218,7 +220,7 @@ where the Pyboard performs a task on waking up, are studied below.
 ## Use case 1: reading a sensor and transmitting the data
 
 This was tested by reading a BMP180 pressure sensor and transmitting the data to a base station using
-an NRF24L01 radio, both with power switched. The current waveform (red trace, 40mA/div, 100mS/div) is
+an NRF24L01 radio, both with power switched. The current waveform (red trace, 40mA/div, 100ms/div) is
 shown below. The yellow trace shows the switched Vdd supply. Note the 300mA spike in the current waveform
 when Vdd switches on: this is caused by the charging of decoupling capacitors on the attached peripherals.
 
@@ -289,8 +291,8 @@ else:
 ```
 
 Measurements were performed with the slave nearby so that timeouts never occurred. A comparison of the current
-waveform presented above with that recorded by @moose shows virtually identical behaviour for the first 180mS as
-the Pyboard boots up. There is then a period of some 230mS until power is applied to the peripherals where
+waveform presented above with that recorded by @moose shows virtually identical behaviour for the first 180ms as
+the Pyboard boots up. There is then a period of some 230ms until power is applied to the peripherals where
 the board continues to draw some 60mA: compilation of imported modules to byte code is likely to be responsible
 for the bulk of this charge usage. The code which performs the actual application - namely power control and
 the reading and transmission of data is responsible for about a third of the total charge use.
@@ -352,6 +354,20 @@ solution is to redirect the REPL to a UART and use a terminal application via a 
 adaptor. If your code uses ``standby()`` a delay may be necessary prior to the call to ensure
 sufficient time elapses for the data to be transmitted before the chip shuts down.
 
+On resumption from standby the Pyboard will execute ``boot.py`` and ``main.py``, so unless ``main.py``
+restarts your program, you will be returned to the REPL.
+
+Other points to note when debugging code which uses standby mode. If using a backup battery
+the RTC will remember settings even if the Pyboard is powered down. So if you run ``rtc.wakeup(value)``,
+power down the board, then power it up to run another program, it will continue to wake from standby
+at the interval specified. Issue ``rtc.wakeup(None)`` if this is not the desired outcome. The same
+applies to alarms: to clear down an alarm instantiate it and issue its ``timeset()`` method with no
+arguments.
+
+Another potential source of confusion arises if you use ``rshell`` to access the Pyboard. Helpfully it
+automatically sets the RTC from the connected computer. However it can result in unexpected timings if
+the RTC is adjusted when delays or alarms are pending.
+
 ## CPU clock speed
 
 When coding for minimum power consumption there are various options. One is to reduce the CPU
@@ -366,9 +382,9 @@ on ``pyb.delay()`` reducing clock rate will help, but see below for an alternati
 This module is a workround for accessing objects not yet officially exposed. Check for official
 support before using. It can be used "as is" or as a source of code for your own use.
 
-The module requires a firmware build dated 27th November 2015 or later and an OSError will be raised
-if this condition is not met. Later builds improve RTC accuracy when standby is used. Note that the
-module uses the topmost three addresses of the backup RAM (1021-1923 inclusive).
+The module requires a firmware build dated 11th February 2016 or later and an OSError will be raised
+if this condition is not met. Note that the module uses the topmost three addresses of the backup RAM
+(1021-1923 inclusive).
 
 Note on objects in this module. Once ``rtc.wakeup()`` is issued, methods other than
 ``enable()`` should be avoided as some employ the RTC. Issue ``rtc.wakeup()`` shortly
@@ -381,21 +397,23 @@ The module provides a single global variable:
 The module provides the following functions:
  1. ``lpdelay`` A low power alternative to ``pyb.delay()``.
  2. ``lp_elapsed_ms`` An alternative to ``pyb.elapsed_millis`` which works during ``lpdelay`` calls.
- 3. ``now`` Returns RTC time in seconds and millisecs since the start of year 2000.
+ 3. ``now`` Returns RTC time in millisecs since the start of year 2000.
  4. ``savetime`` Store current RTC time in backup RAM. Optional arg ``addr`` default 1021 (uses 2 words).
  5. ``ms_left`` Enables a timed sleep or standby to be resumed after a tamper or WKUP interrupt.
  Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
- ``delta`` the delay period in mS, ``addr`` the address where the time was saved (default 1021).
+ ``delta`` the delay period in ms, ``addr`` the address where the time was saved (default 1021).
  6. ``why`` Returns a string providing the cause of a wakeup.
  7. ``cprint`` Same usage as ``print`` but does nothing if USB is connected.
  8. ``v33`` No args. Returns Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
  Lower values indicate a Vin which has dropped below 3.3V typically due to a failing battery.
- 9. ``vbat`` Returns the backup battery voltage (if fitted).
- 10. ``temperature`` Returns the chip temperature in deg C. Note that the chip datasheet points out
+ 9. ``vref`` Returns the reference voltage.
+ 10. ``vbat`` Returns the backup battery voltage (if fitted).
+ 11. ``temperature`` Returns the chip temperature in deg C. Note that the chip datasheet points out
  that the absolute accuracy of this is poor, varies greatly from one chip to another, and is best
- suited for monitoring changes in temperature. It fails if the 3.3V supply drops out of spec.
+ suited for monitoring changes in temperature. It produces spectacularly poor results if the 3.3V
+ supply drops out of spec.
 
-Items 8-10 avoid the drawbacks of the ``pyb.ADCAll`` class. This turns all available pins into ADC
+Items 8-11 avoid the drawbacks of the ``pyb.ADCAll`` class. Instantiating this turns all available pins into ADC
 inputs. Further its ``read_core_vbat()`` method returns incorrect results if the 3.3V supply is low
 for example due to a failing battery.
 
@@ -408,7 +426,7 @@ The module provides the following classes:
 
 ### Function ``lpdelay()``
 
-This function accepts one argument: a delay in mS and is a low power replacement for ``pyb.delay()``.
+This function accepts one argument: a delay in ms and is a low power replacement for ``pyb.delay()``.
 The function normally uses ``pyb.stop`` to reduce power consumption from 20mA to 500uA. If USB
 is connected it reverts to ``pyb.delay`` to avoid killing the USB connection. There is a subtle
 issue when using this function: ``pyb`` loses all sense of time when the Pyboard is stopped. Consequently
@@ -417,7 +435,7 @@ solution is to use the provided ``lp_elapsed_ms`` function.
 
 ### Function ``lp_elapsed_ms()``
 
-Accepts one argument, a start time tuple derived from the ``now`` function. Typical code to
+Accepts one argument, a start time in ms from the ``now`` function. Typical code to
 implement a one second timeout might be along these lines:
 
 ```python
@@ -429,24 +447,25 @@ while upower.lp_elapsed_ms(start) < 1000:
 
 ### Function ``now()``
 
-Returns RTC time since the start of year 2000. Two integers are returned, the seconds value and a
-value of milliseconds (from 0 to 999). The function is mainly intended for use in
+Returns RTC time in milliseconds since the start of year 2000. The function is mainly intended for use in
 implementing sleep or standby delays which can be resumed after an interrupt from tamper or WKUP.
 Millisecond precision is meaningless in standby periods where wakeups are slow, but is relevant to sleep.
-Precision is limited to about 4mS owing to the RTC hardware.
+Precision is limited to about 4ms owing to the RTC hardware.
 
 ### Function ``savetime()``
 
 Store current RTC time in backup RAM. Optional argument ``addr`` default 1021. This uses two words
-to store the seconds and milliseconds values produced by ``now()``
+to store the milliseconds value produced by ``now()``
 
 ### Function ``ms_left()``
 
 This produces a value of delay for presenting to ``wakeup()`` and enables a timed sleep or standby to be
 resumed after a tamper or WKUP interrupt. To use it, execute ``savetime`` before commencing the sleep/standby.
-Arguments ``delta`` normally the original delay period in mS, ``addr`` the address where the time was saved
+Arguments ``delta`` normally the original delay period in ms, ``addr`` the address where the time was saved
 (default 1021). The function can raise an exception in response to a number of errors such as the case
 where a time was not saved or the RTC was adjusted after saving. The defensive coder will trap these!
+
+If the time has expired it will return zero (i.e. it will never return negative values).
 
 The test program ``ttest.py`` illustrates its use.
 
@@ -486,9 +505,9 @@ mytimer.timeset(second = 30) # Wake up each time RTC seconds reads 30 i.e. once 
 
 ### ``BkpRAM`` class (access Backup RAM)
 
-This class enables the on-chip 4KB of RAM to be accessed as an array of integers or as a
+This class enables the on-chip 4KB of battery backed RAM to be accessed as an array of integers or as a
 bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
-Like all RAM its initial contents after power up are arbitrary unless an RTC backup battery is used.
+Its initial contents after power up are arbitrary unless an RTC backup battery is used.
 Note that ``savetime()`` uses two 32 bit words at 1021 and 1022 by default and startup detection
 uses 1023 so these top three locations should normally be avoided.
 
@@ -496,8 +515,7 @@ uses 1023 so these top three locations should normally be avoided.
 from upower import BkpRAM
 bkpram = BkpRAM()
 bkpram[0] = 22 # use as integer array
-ba = bkpram.get_bytearray()
-ba[4] = 0 # or as a bytearray
+bkpram.ba[4] = 0 # or as a bytearray
 ```
 
 The following code fragment illustrates the use of pickle to save an arbitrary Python object to
@@ -505,20 +523,16 @@ backup RAM and restore it on a subsequent wakeup. The pickle module is available
 library.
 
 ```python
-import pickle
-from upower import BkpRAM
-bkpram = BkpRAM()
+import pickle, upower
+bkpram = upower.BkpRAM()
 a = {'rats':77, 'dogs':99,'elephants':9, 'zoo':100}
 z = pickle.dumps(a).encode('utf8')
-ba = bkpram.get_bytearray()
 bkpram[0] = len(z)
-ba[4: 4+len(z)] = z # Copy into backup RAM
+bkpram.ba[4: 4+len(z)] = z # Copy into backup RAM
  # Resumption after standby
-import pickle
-from upower import BkpRAM
-bkpram = BkpRAM()
-ba = bkpram.get_bytearray()
-a = pickle.loads(bytes(ba[4:4+bkpram[0]]).decode('utf-8')) # retrieve dictionary
+import pickle, upower
+bkpram = upower.BkpRAM()
+a = pickle.loads(bytes(bkpram.ba[4:4+bkpram[0]]).decode('utf-8')) # retrieve dictionary
 ```
 
 ### ``RTCRegs`` class (RTC Register access)
@@ -615,7 +629,7 @@ up: the first caused by the power up, and the second by the deferred wakeup.
 
 Demonstrates the RTC alarms. Runs both alarms concurrently, waking every 30 seconds and flashing
 LED's to indicate which timer has caused the wakeup. To run this, edit your ``main.py`` to include
-``import alarm``. 
+``import alarm``.
 
 # Hardware
 

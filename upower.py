@@ -2,10 +2,36 @@
 # Copyright 2015 Peter Hinch
 # This code is released under the MIT licence
 
-# V0.3 18th February 2016
+# V0.3 13th February 2016
 
 # http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
 import pyb, stm, os, utime, uctypes
+
+# CODE RUNS ON IMPORT **** START ****
+
+def buildcheck(tupTarget):
+    fail = True
+    if 'uname' in dir(os):
+        datestring = os.uname()[3]
+        date = datestring.split(' on')[1]
+        idate = tuple([int(x) for x in date.split('-')])
+        fail = idate < tupTarget
+    if fail:
+        raise OSError('This driver requires a firmware build dated {:4d}-{:02d}-{:02d} or later'.format(*tupTarget))
+
+buildcheck((2016, 02, 11))                      # Version allows 32 bit write to stm register
+
+usb_connected = False
+if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
+    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+    if not usb_connected:
+        pyb.usb_mode(None)                      # Save power
+
+# CODE RUNS ON IMPORT **** END ****
+
+def bounds(val, minval, maxval, msg):           # Bounds check
+    if not (val >= minval and val <= maxval):
+        raise ValueError(msg)
 
 def singleton(cls):
     instances = {}
@@ -18,30 +44,13 @@ def singleton(cls):
 class RTCError(OSError):
     pass
 
-def buildcheck(tupTarget):
-    fail = True
-    if 'uname' in dir(os):
-        datestring = os.uname()[3]
-        date = datestring.split(' on')[1]
-        idate = tuple([int(x) for x in date.split('-')])
-        fail = idate < tupTarget
-    if fail:
-        raise OSError('This driver requires a firmware build dated {:4d}-{:02d}-{:02d} or later'.format(*tupTarget))
-
-buildcheck((2016,02,11)) # allow 32 bit write to stm register
-
-usb_connected = False
-if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
-    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
-    if not usb_connected:
-        pyb.usb_mode(None)                      # Save power
-
 def cprint(*args, **kwargs):                    # Conditional print: USB fails if low power modes are used
+    global usb_connected
     if not usb_connected:                       # assume a UART has been specified in boot.py
         print(*args, **kwargs)
 
 @micropython.asm_thumb
-def ctz(r0):                                   # Count the trailing zeros in an integer
+def ctz(r0):                                    # Count the trailing zeros in an integer
     rbit(r0, r0)
     clz(r0, r0)
 
@@ -51,28 +60,34 @@ def ctz(r0):                                   # Count the trailing zeros in an 
 class BkpRAM(object):
     BKPSRAM = 0x40024000
     def __init__(self):
-      stm.mem32[stm.RCC + stm.RCC_APB1ENR] |= 0x10000000 # PWREN bit
-      stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100 # Set the DBP bit in the PWR power control register
-      stm.mem32[stm.RCC +stm.RCC_AHB1ENR]|= 0x40000 # enable BKPSRAMEN
-      stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup register enable bit
+        stm.mem32[stm.RCC + stm.RCC_APB1ENR] |= 0x10000000 # PWREN bit
+        stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100  # Set the DBP bit in the PWR power control register
+        stm.mem32[stm.RCC +stm.RCC_AHB1ENR]|= 0x40000 # enable BKPSRAMEN
+        stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup register enable bit
+        self._ba = uctypes.bytearray_at(self.BKPSRAM, 4096)
+    def idxcheck(self, idx):
+        bounds(idx, 0, 0x3ff, 'RTC backup RAM index out of range')
     def __getitem__(self, idx):
-        assert idx >= 0 and idx <= 0x3ff, "Index must be between 0 and 1023"
+        self.idxcheck(idx)
         return stm.mem32[self.BKPSRAM + idx * 4]
     def __setitem__(self, idx, val):
-        assert idx >= 0 and idx <= 0x3ff, "Index must be between 0 and 1023"
+        self.idxcheck(idx)
         stm.mem32[self.BKPSRAM + idx * 4] = val
-    def get_bytearray(self):
-        return uctypes.bytearray_at(self.BKPSRAM, 4096)
+    @property
+    def ba(self):
+        return self._ba                         # Access as bytearray
 
 # ***** RTC REGISTERS *****
 
 @singleton
 class RTCRegs(object):
+    def idxcheck(self, idx):
+        bounds(idx, 0, 19, 'RTC register index out of range')
     def __getitem__(self, idx):
-        assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
+        self.idxcheck(idx)
         return stm.mem32[stm.RTC + stm.RTC_BKP0R+ idx * 4]
     def __setitem__(self, idx, val):
-        assert idx >= 0 and idx <= 19, "Index must be between 0 and 19"
+        self.idxcheck(idx)
         stm.mem32[stm.RTC + stm.RTC_BKP0R + idx * 4] = val
 
 
@@ -185,23 +200,14 @@ class wakeup_X1(object):                                # Support wakeup on low-
 
 # ***** RTC TIMER SUPPORT *****
 
-@micropython.asm_thumb
-def set_rtc_register(r0, r1, r2):               # MS word, LS word, offset address of register
-    mov(r3, 16)
-    lsl(r0, r3)
-    orr(r0, r1)
-    movw(r3, 0x2800)
-    movt(r3, 0x4000)                            # Base address of RTC 0x40002800
-    orr(r2, r3)
-    str(r0, [r2, 0])
-
 def bcd(x): # integer to BCD (2 digit max)
     return (x % 10) + ((x//10) << 4)
 
 class Alarm(object):
     instantiated = False
     def __init__(self, ident):
-        assert ident in ('a','A','b','B'), "Ident must be 'A' or 'B'"
+        if not ident in ('a','A','b','B'):
+            raise ValueError("Alarm iIdent must be 'A' or 'B'")
         self.ident = ident.lower()
         if self.ident == 'a':
             self.alclear = 0xffeeff
@@ -229,32 +235,32 @@ class Alarm(object):
         self.lval = 0x8080
         setlower = False
         if day_of_month is not None:
-            assert day_of_month > 0 and day_of_month < 32, "Day of month must be between 1 and 31"
+            bounds(day_of_month, 1 , 31, "Day of month must be between 1 and 31")
             self.uval &= 0x7fff                # Unmask day
             self.uval |= (bcd(day_of_month) << 8)
             setlower = True
         elif weekday is not None:
-            assert weekday > 0 and weekday < 8, "Weekday must be from 1 (Monday) to 7"
+            bounds(weekday, 1, 7, "Weekday must be from 1 (Monday) to 7")
             self.uval &= 0x7fff                 # Unmask day
             self.uval |= 0x4000                 # Indicate day of week
             self.uval |= (weekday << 8)
             setlower = True
         if hour is not None:
-            assert hour >= 0 and hour < 24, "Hour must be 0 to 23"
+            bounds(hour, 0, 23, "Hour must be 0 to 23")
             self.uval &= 0xff3f                 # Unmask hour, force 24 hour format
             self.uval |= bcd(hour)
             setlower = True
         elif setlower:
             self.uval &= 0xff3f                 # Unmask hour, force 24 hour format
         if minute is not None:
-            assert minute >= 0 and minute < 60, "Minute must be 0 to 59"
+            bounds(minute, 0, 59, "Minute must be 0 to 59")
             self.lval &= 0x7fff                 # Unmask minute
             self.lval |= (bcd(minute) << 8)
             setlower = True
         elif setlower:
             self.lval &= 0x7fff                 # Unmask minute
         if second is not None:
-            assert second >= 0 and second < 60, "Second must be 0 to 23"
+            bounds(second, 0, 59, "Second must be 0 to 59")
             self.lval &= 0xff7f                 # Unmask second
             self.lval |= bcd(second)
         elif setlower:
@@ -262,13 +268,12 @@ class Alarm(object):
         stm.mem32[stm.RTC + stm.RTC_WPR] |= 0xCA            # enable write
         stm.mem32[stm.RTC + stm.RTC_WPR] |= 0x53
         stm.mem32[stm.RTC + stm.RTC_CR] &= self.alclear     # Clear ALRxE in RTC_CR to disable Alarm 
-        if self.uval == 0x8080 and self.lval == 0x8080:      # No alarm set: disable
+        if self.uval == 0x8080 and self.lval == 0x8080:     # No alarm set: disable
             stm.mem32[stm.RTC + stm.RTC_WPR] = 0xff         # Write protect
             return
         pyb.delay(5)
         if stm.mem32[stm.RTC + stm.RTC_ISR] & self.albit :  # test ALRxWF IN RTC_ISR
-#            set_rtc_register(self.uval, self.lval, self.alreg)
-            stm.mem32[stm.RTC + self.alreg] = self.lval + (self.uval << 16) # still broken
+            stm.mem32[stm.RTC + self.alreg] = self.lval + (self.uval << 16)
             stm.mem32[stm.RTC + stm.RTC_ISR] &= self.alisr  # Clear the RTC alarm ALRxF flag
             stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # Clear the PWR Wakeup (WUF) flag
             stm.mem32[stm.RTC+stm.RTC_CR] |= self.alenable  # Enable the RTC alarm and interrupt
@@ -303,38 +308,36 @@ def why():
     stm.mem32[stm.PWR + stm.PWR_CR] |= 4                    # Clear the PWR Wakeup (WUF) flag
     return result
 
-def now():  # Return the current time from the RTC in secs and millisecs from year 2000
+def now():  # Return the current time from the RTC in millisecs from year 2000
     rtc = pyb.RTC()
     secs = utime.time()
     ms = 1000*(255 -rtc.datetime()[7]) >> 8
     if ms < 50:                                 # Might have just rolled over
         secs = utime.time()
-    return secs, ms
+    return ms + 1000 * secs
 
-def lp_elapsed_ms(tuptime):                     # An elapsed_ms function which works during lpdelays
-    t = now()
-    return t[0] * 1000  + t[1] - tuptime[0] * 1000 - tuptime[1] 
+def lp_elapsed_ms(tstart):                      # An elapsed_ms function which works during lpdelays
+    return now() - tstart
 
 # Save the current time in mS 
 def savetime(addr = 1021):
     bkpram = BkpRAM()
-    bkpram[addr], bkpram[addr +1] = now()
+    bkpram[addr], bkpram[addr +1] = divmod(now(), 1000)
 
 # Return the number of mS outstanding from a delay of delta mS
 def ms_left(delta, addr = 1021):
     bkpram = BkpRAM()
     if not (bkpram[addr +1] <= 1000 and bkpram[addr +1] >= 0):
         raise RTCError("Time data not saved.")
-    start_ms = 1000*bkpram[addr] + bkpram[addr +1]
-    now_secs, now_millis = now()
-    now_ms = 1000* now_secs + now_millis
+    start_ms = 1000 * bkpram[addr] + bkpram[addr +1]
+    now_ms = now()
     result = max(start_ms + delta - now_ms, 0)  # avoid -ve results where time was missed (e.g. power outage)
     if result > delta:
         raise RTCError("Invalid saved time data.")
     return result
 
 def adcread(chan):                              # 16 temp 17 vbat 18 vref
-    assert chan >= 16 and chan <= 18, 'Invalid channel'
+    bounds(chan, 16, 18, 'Invalid ADC channel')
     start = pyb.millis()
     timeout = 100
     stm.mem32[stm.RCC + stm.RCC_APB2ENR] |= 0x100 # enable ADC1 clock.0x4100
@@ -359,13 +362,16 @@ def adcread(chan):                              # 16 temp 17 vbat 18 vref
     return data
 
 def v33():
-    return 4096 * 1.21 /adcread(17)
+    return 4096 * 1.21 / adcread(17)
 
 def vbat():
     return  1.21 * 2 * adcread(18) / adcread(17)  # 2:1 divider on Vbat channel
 
+def vref():
+    return 3.3 * adcread(17) / 4096
+
 def temperature():
-    return (3.3 * adcread(16) / 4096 - 0.76) / 0.0025 + 25
+    return 25 + 400 * (3.3 * adcread(16) / 4096 - 0.76)
 
 # ********** OLD API AND TEST CODE **********
 def battery_volts():

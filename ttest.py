@@ -51,7 +51,7 @@ upower.lpdelay(50)                              # Wait out any contact bounce
                                                 # demo of not resetting the wakeup timer after a pin interrupt
 try:                                            # ms_left can fail in response to various coding errors
     timeleft = upower.ms_left(10000)
-except RTCError:
+except upower.RTCError:
     timeleft = 10000                            # Coding error: uninitialised - just restart the timer
 timeleft = max(timeleft, 1000)                  # Set a minimum sleep duration: too short and it uses less power to stay awake
                                                 # In real apps this might be longer or you might deal with it in other ways.
