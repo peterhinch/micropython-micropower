@@ -1,5 +1,8 @@
 # The upower module
 
+See also [hardware](./HARDWARE.md) for a document discussing hardware issues and power draw calculations
+and measurements.
+
 ## Introduction
 
 This module provides access to features of the Pyboard which are useful in low power applications but not
@@ -162,7 +165,7 @@ On wakeup calling this will return one of the following strings:
 
 The only time I've observed None is after the reset button is pressed.
 
-## ``Alarm`` class (access RTC alarms)
+## Alarm class (access RTC alarms)
 
 The RTC supports two alarms 'A' and 'B' each of which can wake the Pyboard at programmed intervals.
 
@@ -182,7 +185,7 @@ mytimer.timeset(hour = 5) # Wake at 5am every day
 mytimer.timeset(minute = 10, second = 30) # Wake up every hour at 10 mins, 30 secs after the hour  
 mytimer.timeset(second = 30) # Wake up each time RTC seconds reads 30 i.e. once per minute  
 
-## ``BkpRAM`` class (access Backup RAM)
+## BkpRAM class (access Backup RAM)
 
 This class enables the on-chip 4KB of battery backed RAM to be accessed as an array of integers or as a
 bytearray. The latter facilitates creating persistent arbitrary objects using JSON or pickle.
@@ -214,7 +217,7 @@ bkpram = upower.BkpRAM()
 a = pickle.loads(bytes(bkpram.ba[4:4+bkpram[0]]).decode('utf-8')) # retrieve dictionary
 ```
 
-## ``RTCRegs`` class (RTC Register access)
+## RTCRegs class (RTC Register access)
 
 The RTC has a set of 19 32-bit backup registers. These are initialised to zero on boot, and are
 also cleared down after a Tamper event. Registers may be accessed as follows:  
@@ -225,7 +228,7 @@ rtcregs = RTCRegs()
 rtcregs[3] = 42
 ```
 
-## ``Tamper`` class (Enable wakeup onr pin X18)
+## Tamper class (Enable wakeup onr pin X18)
 
 This is a flexible way to interrupt a standby condition, providing for edge or level detection the
 latter with hardware switch debouncing. Level detection operates as follows. The pin is normally
@@ -264,7 +267,7 @@ by the constructor.
 
 See ``ttest.py`` for an example of its usage.
 
-## ``wakeup_X1`` class (Enable wakeup using a high going edge on pin X1)
+## wakeup_X1 class (Enable wakeup using a high going edge on pin X1)
 
 Enabling this converts pin X1 into an input with a pulldown resistor enabled even in standby mode. A low to
 high transition will wake the Pyboard from standby. The following code fragment illustrates its use.

@@ -1,4 +1,4 @@
-# micropython-micropower
+# Designing Pyboard systems for low power consumption
 
 The Pyboard can be used to build systems with extremely low power consumption, and it is possible
 to build systems capable of running for over a year on standard batteries such as AA cells or even
@@ -18,9 +18,13 @@ the source of the wakeup and the storage of program state while sleeping.
 
 Two sets of resources are provided to assist with the development of low power solutions.
 
+### Hardware
+
 [hardware](./HARDWARE.md) A discussion of techniques to minimise power consumption including ways
 to shut down attached devices, calculation of battery usage and measurements of results. A
 schematic for a typical system is provided with accompanying PCB layout. 
+
+### Software
 
 [upower](./UPOWER.md) This documents ``upower.py``, a module providing access to features of the
 Pyboard SOC which are currently unsupported in the official firmware. Some of these features may

@@ -1,8 +1,10 @@
 # Minimising Pyboard system power consumption
 
-Some ideas for building ultra low power systems based on the Pyboard. This document is based on Pyboard
-hardware V1.0 or V1.1. Users of V1.0 Pyboards should note that the standby current of this version is
-approximately 30uA as against 6uA for the later version.
+This document is based on Pyboard hardware V1.0 or V1.1. Users of V1.0 Pyboards should note that the
+standby current of this version is approximately 30uA as against 6uA for the later version.
+
+See also [upower](./UPOWER.md) for a Python module providing access to SOC resources of use in low 
+power systems.
 
 All code is issued under the [MIT license](./LICENSE)
 
