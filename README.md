@@ -1,4 +1,4 @@
-# Designing Pyboard systems for low power consumption
+# Reducing Pyboard system power consumption
 
 The Pyboard can be used to build systems with extremely low power consumption, and it is possible
 to build systems capable of running for over a year on standard batteries such as AA cells or even

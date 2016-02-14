@@ -219,7 +219,7 @@ a = pickle.loads(bytes(bkpram.ba[4:4+bkpram[0]]).decode('utf-8')) # retrieve dic
 
 ## RTCRegs class (RTC Register access)
 
-The RTC has a set of 19 32-bit backup registers. These are initialised to zero on boot, and are
+The RTC has a set of 20 32-bit backup registers. These are initialised to zero on boot, and are
 also cleared down after a Tamper event. Registers may be accessed as follows:  
 
 ```python
@@ -228,9 +228,9 @@ rtcregs = RTCRegs()
 rtcregs[3] = 42
 ```
 
-## Tamper class (Enable wakeup onr pin X18)
+## Tamper class (Enable wakeup on pin X18)
 
-This is a flexible way to interrupt a standby condition, providing for edge or level detection the
+This is a flexible way to interrupt a standby condition, providing for edge or level detection, the
 latter with hardware switch debouncing. Level detection operates as follows. The pin is normally
 high impedance. At intervals a pullup resistor is connected and the pin state sampled. After a given
 number of such intervals, if the pin continues to be in the active state, the Pyboard is woken. The
@@ -246,7 +246,8 @@ from upower import Tamper
 tamper = Tamper()
 ```
 
-The class supports the following methods and properties:  
+The class supports the following methods and properties.  
+
 ``setup()`` method accepts the following arguments:
  1. ``level`` Mandatory: valid options 0 or 1. In level triggered mode, determines the active level.
  In edge triggered mode, 0 indicates rising edge trigger, 1 falling edge. Optional kwonly args:
@@ -255,11 +256,13 @@ The class supports the following methods and properties:
  4. ``edge`` Boolean. If True, the pin is edge triggered. ``freq`` and ``samples`` are ignored. Default False.
 
 ``enable()`` method enables the tamper interrupt. Call just before issuing ``pyb.standby()`` and after
-the use of any other methods as it reconfigures the pin.  
+the use of any other methods as it reconfigures the pin.
+
 ``tamper.wait_inactive()`` method returns when pin X18 has returned to its inactive
 state. In level triggered mode this may be called before issuing the ``enable()`` method to avoid recurring
 interrupts. In edge triggered mode where the signal is from a switch it might be used to debounce the
-trailing edge of the contact period.  
+trailing edge of the contact period.
+
 ``disable()`` method disables the interrupt. Not normally required as the interrupt is disabled
 by the constructor.
 
@@ -267,7 +270,7 @@ by the constructor.
 
 See ``ttest.py`` for an example of its usage.
 
-## wakeup_X1 class (Enable wakeup using a high going edge on pin X1)
+## wakeup_X1 class (Enable wakeup on pin X1)
 
 Enabling this converts pin X1 into an input with a pulldown resistor enabled even in standby mode. A low to
 high transition will wake the Pyboard from standby. The following code fragment illustrates its use.
@@ -282,14 +285,18 @@ if not upower.usb_connected:
     pyb.standby()
 ```
 
-The ``wakeup_X1`` class has the following methods and properties.  
+The ``wakeup_X1`` class has the following methods and properties.
+
 ``enable()`` enables the wkup interrupt. Call just before issuing ``pyb.standby()`` and after
-the use of any other wkup methods as it reconfigures the pin.  
+the use of any other wkup methods as it reconfigures the pin.
+
 ``wait_inactive()`` This method returns when pin X1 has returned low. This might be
 used to debounce the trailing edge of the contact period: call ``lpdelay(50)`` after the function returns
-and before entering standby to ensure that contact bounce is over.  
+and before entering standby to ensure that contact bounce is over.
+
 ``disable()`` disables the interrupt. Not normally required as the interrupt is disabled
-by the constructor.  
+by the constructor.
+
 ``pinvalue`` Property returning the value of the signal on the pin: 0 is low, 1 high.
 
 # Module ttest
