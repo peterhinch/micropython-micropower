@@ -223,6 +223,7 @@ also cleared down after a Tamper event. Registers may be accessed as follows:
 from upower import RTCRegs
 rtcregs = RTCRegs()
 rtcregs[3] = 42
+```
 
 ## ``Tamper`` class (Enable wakeup onr pin X18)
 
@@ -240,6 +241,7 @@ In use first instatiate the tamper object:
 ```python
 from upower import Tamper
 tamper = Tamper()
+```
 
 The class supports the following methods and properties:  
 ``setup()`` method accepts the following arguments:
