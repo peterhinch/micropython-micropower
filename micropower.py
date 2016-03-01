@@ -1,4 +1,5 @@
-# micropower.py Support for hardware capable of switching off the power for Pyboard peripherals
+# micropower.py Support for hardware capable of switching off the power
+# for Pyboard peripherals
 # 28th Aug 2015
 # This code is released under the MIT licence
 # version 0.45
@@ -22,17 +23,17 @@ class PowerController(object):
     def __init__(self, pin_active_high, pin_active_low):
         self.upcount = 0
         if pin_active_low is not None:          # Start with power down
-            self.al = pyb.Pin(pin_active_low, mode = pyb.Pin.OUT_PP)
+            self.al = pyb.Pin(pin_active_low, mode=pyb.Pin.OUT_PP)
             self.al.high()
         else:
             self.al = None
         if pin_active_high is not None:         # and pullups disabled
-            self.ah = pyb.Pin(pin_active_high, mode = pyb.Pin.OUT_PP)
+            self.ah = pyb.Pin(pin_active_high, mode=pyb.Pin.OUT_PP)
             self.ah.low()
         else:
             self.ah = None
 
-    def __enter__(self):                        # Optional use as context manager
+    def __enter__(self):                        # use as context manager
         self.power_up()
         return self
 
@@ -46,7 +47,7 @@ class PowerController(object):
                 self.ah.high()                  # Enable I2C pullups
             if self.al is not None:
                 self.al.low()                   # Power up
-            pyb.delay(10)                       # Nominal time for device to settle
+            pyb.delay(10)                       # time for device to settle
 
     def power_down(self):
         if self.upcount > 1:

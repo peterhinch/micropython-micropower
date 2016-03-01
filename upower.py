@@ -49,10 +49,19 @@ def cprint(*args, **kwargs):                    # Conditional print: USB fails i
     if not usb_connected:                       # assume a UART has been specified in boot.py
         print(*args, **kwargs)
 
-@micropython.asm_thumb
-def ctz(r0):                                    # Count the trailing zeros in an integer
-    rbit(r0, r0)
-    clz(r0, r0)
+#@micropython.asm_thumb
+#def ctz(r0):                                    # Count the trailing zeros in an integer
+#    rbit(r0, r0)
+#    clz(r0, r0)
+
+def ctz(n): # Now in Python to enable frozen bytecode
+    if not n:
+        return 32
+    count = 0
+    while not n & 1:
+        n >>= 1
+        count += 1
+    return count
 
 # ***** BACKUP RAM SUPPORT *****
 
