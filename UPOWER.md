@@ -82,7 +82,7 @@ The module provides the following functions:
  5. ``ms_left`` Enables a timed sleep or standby to be resumed after a tamper or WKUP interrupt.
  Requires ``savetime`` to have been called before commencing the sleep/standby. Arguments
  ``delta`` the delay period in ms, ``addr`` the address where the time was saved (default 1021).
- 6. ``why`` Returns a string providing the cause of a wakeup.
+ 6. ``why`` [DEPRECATED] Returns a string providing the cause of a wakeup.
  7. ``cprint`` Same usage as ``print`` but does nothing if USB is connected.
  8. ``v33`` No args. Returns Vdd. If Vin > 3.3V Vdd should read approximately 3.3V.
  Lower values indicate a Vin which has dropped below 3.3V typically due to a failing battery.
@@ -153,11 +153,14 @@ The test program ``ttest.py`` illustrates its use.
 
 ## Function ``why()``
 
+This function is now deprecated, and in fact does not work with current firmware builds. It has
+been replaced with ``machine.reset_cause()``.
+
 On wakeup calling this will return one of the following strings:
  1. 'BOOT' The Pyboard was powered up from cold.
  2. 'POWERUP' Power re-applied to board with backup battery.
  3. 'TAMPER' Woken by the ``tamper`` object (event on pin X18).
- 4. 'WAKEUP' Timer wakeup.
+ 4. 'WAKEUP' Timer wakeup.zvgHW1798:
  5. 'X1' Woken by a high going edge on pin X1.
  6. 'ALARM_A' Woken by RTC alarm A.
  7. 'ALARM_B' Woken by RTC alarm B.

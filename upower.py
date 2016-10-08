@@ -291,6 +291,7 @@ class Alarm(object):
             raise OSError("Can't access alarm " + self.ident)
 
 # Return the reason for a wakeup event. Note that boot detection uses the last word of backup RAM.
+# Now deprecated and superceded with an official solution: use machine.reset_cause()
 def why():
     result = None
     bkpram = BkpRAM()
