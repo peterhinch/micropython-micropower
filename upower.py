@@ -1,11 +1,13 @@
 # upower.py Enables access to functions useful in low power Pyboard projects
-# Copyright 2015 Peter Hinch
+# Copyright 2016 Peter Hinch
 # This code is released under the MIT licence
 
-# V0.3 13th February 2016
+# V0.4 10th October 2016
+# why() function adapted: old version broken by firmware change
+
 
 # http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
-import pyb, stm, os, utime, uctypes
+import pyb, stm, os, utime, uctypes, machine
 
 # CODE RUNS ON IMPORT **** START ****
 
@@ -19,7 +21,7 @@ def buildcheck(tupTarget):
     if fail:
         raise OSError('This driver requires a firmware build dated {:4d}-{:02d}-{:02d} or later'.format(*tupTarget))
 
-buildcheck((2016, 02, 11))                      # Version allows 32 bit write to stm register
+buildcheck((2016, 10, 1))                       # y,m,d
 
 usb_connected = False
 if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
@@ -49,12 +51,8 @@ def cprint(*args, **kwargs):                    # Conditional print: USB fails i
     if not usb_connected:                       # assume a UART has been specified in boot.py
         print(*args, **kwargs)
 
-#@micropython.asm_thumb
-#def ctz(r0):                                    # Count the trailing zeros in an integer
-#    rbit(r0, r0)
-#    clz(r0, r0)
-
-def ctz(n): # Now in Python to enable frozen bytecode
+# Count the trailing zeros in an integer
+def ctz(n):
     if not n:
         return 32
     count = 0
@@ -71,7 +69,7 @@ class BkpRAM(object):
     def __init__(self):
         stm.mem32[stm.RCC + stm.RCC_APB1ENR] |= 0x10000000 # PWREN bit
         stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100  # Set the DBP bit in the PWR power control register
-        stm.mem32[stm.RCC +stm.RCC_AHB1ENR]|= 0x40000 # enable BKPSRAMEN
+        stm.mem32[stm.RCC + stm.RCC_AHB1ENR] |= 0x40000 # enable BKPSRAMEN
         stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup register enable bit
         self._ba = uctypes.bytearray_at(self.BKPSRAM, 4096)
     def idxcheck(self, idx):
@@ -290,33 +288,33 @@ class Alarm(object):
         else:
             raise OSError("Can't access alarm " + self.ident)
 
-# Return the reason for a wakeup event. Note that boot detection uses the last word of backup RAM.
-# Now deprecated and superceded with an official solution: use machine.reset_cause()
+# Return the reason for a wakeup event.
+# machine.reset_cause() should be used initially, see UPOWER.md
 def why():
     result = None
-    bkpram = BkpRAM()
-    if stm.mem32[stm.PWR+stm.PWR_CSR] & 2 == 0:
-        if bkpram[1023] != 0x27288a6f:
-            result = 'BOOT'
-            bkpram[1023] = 0x27288a6f                       # In case a backup battery is in place
-        else:
-            result = 'POWERUP'                              # a backup battery is in place
-    else:
-        rtc_isr = stm.mem32[stm.RTC + stm.RTC_ISR]
-        if rtc_isr & 0x2000:
-            result = 'TAMPER'
-        elif rtc_isr & 0x400:
-            result = 'WAKEUP'
-        elif rtc_isr & 0x200:
-            stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x200
-            result = 'ALARM_B'
-        elif rtc_isr & 0x100 :
-            stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x100
-            result = 'ALARM_A'
-        elif stm.mem32[stm.PWR + stm.PWR_CSR] & 1:          # WUF set: the only remaining cause is X1 (?)
-            result = 'X1'                                   # if WUF not set, cause unknown, return None
-    stm.mem32[stm.PWR + stm.PWR_CR] |= 4                    # Clear the PWR Wakeup (WUF) flag
+    rtc_isr = stm.mem32[stm.RTC + stm.RTC_ISR]
+    if rtc_isr & 0x2000:
+        result = 'TAMPER'
+    elif rtc_isr & 0x400:
+        result = 'WAKEUP'
+    elif rtc_isr & 0x200:
+        stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x200
+        result = 'ALARM_B'
+    elif rtc_isr & 0x100 :
+        stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x100
+        result = 'ALARM_A'
+    elif stm.mem32[stm.PWR + stm.PWR_CSR] & 1:          # WUF set: the only remaining cause is X1 (?)
+        result = 'X1'                                   # if WUF not set, cause unknown, return None
+    stm.mem32[stm.PWR + stm.PWR_CR] |= 4                # Clear the PWR Wakeup (WUF) flag
     return result
+
+def bkpram_ok():
+    bkpram = BkpRAM()
+    if bkpram[1023] == 0x27288a6f:              # backup RAM has been used before
+        return True
+    else:
+        bkpram[1023] = 0x27288a6f
+    return False
 
 def now():  # Return the current time from the RTC in millisecs from year 2000
     rtc = pyb.RTC()
