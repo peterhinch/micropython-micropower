@@ -181,6 +181,7 @@ class wakeup_X1(object):                                # Support wakeup on low-
     def __init__(self):
         self.disable()
         self.pin = pyb.Pin.board.X1                     # Don't configure pin unless user accesses wkup
+                                                        # On the Espruino Pico change X1 to A0 (issue #1)
         self.pin_configured = False
 
     def _pinconfig(self):
