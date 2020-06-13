@@ -2,6 +2,8 @@
 # Copyright 2016 Peter Hinch
 # This code is released under the MIT licence
 
+# V0.41 13th June 2020 Fix Tamper for Pyboard D. Ref
+# https://forum.micropython.org/viewtopic.php?f=20&t=8518&p=48337
 # V0.4 10th October 2016
 # why() function adapted: old version broken by firmware change
 
@@ -11,17 +13,7 @@ import pyb, stm, os, utime, uctypes, machine
 
 # CODE RUNS ON IMPORT **** START ****
 
-def buildcheck(tupTarget):
-    fail = True
-    if 'uname' in dir(os):
-        datestring = os.uname()[3]
-        date = datestring.split(' on')[1]
-        idate = tuple([int(x) for x in date.split('-')])
-        fail = idate < tupTarget
-    if fail:
-        raise OSError('This driver requires a firmware build dated {:4d}-{:02d}-{:02d} or later'.format(*tupTarget))
-
-buildcheck((2016, 10, 1))                       # y,m,d
+d_series = os.uname().machine.split(' ')[0][:4] == 'PYBD'
 
 usb_connected = False
 if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
@@ -151,7 +143,10 @@ class Tamper(object):
             self.pin_configured = True
 
     def disable(self):
-        stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask
+        if d_series:
+            stm.mem32[stm.RTC + stm.RTC_TAMPCR] = self.tampmask
+        else:
+            stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask
 
     def wait_inactive(self):
         self._pinconfig()
@@ -171,8 +166,12 @@ class Tamper(object):
         stm.mem32[stm.EXTI + stm.EXTI_PR] |= BIT21      # Clear pending bit
 
         stm.mem32[stm.RTC + stm.RTC_ISR] &= 0xdfff      # Clear tamp1f flag
-        stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # Clear power wakeup flag WUF
-        stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask | 5 # Tamper interrupt enable and tamper1 enable
+        if d_series:
+            stm.mem32[stm.PWR + stm.PWR_CSR2] |= 4  # Clear power wakeup flag WUF
+            stm.mem32[stm.RTC + stm.RTC_TAMPCR] = self.tampmask | 5 # Tamper interrupt enable and tamper1 enable
+        else:
+            stm.mem32[stm.PWR + stm.PWR_CR] |= 4  # Clear power wakeup flag WUF
+            stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask | 5 # Tamper interrupt enable and tamper1 enable
 
 # ***** WKUP PIN (X1) SUPPORT *****
 
