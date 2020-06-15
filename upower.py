@@ -2,7 +2,7 @@
 # Copyright 2016 Peter Hinch
 # This code is released under the MIT licence
 
-# V0.41 13th June 2020 Fix Tamper for Pyboard D. Ref
+# V0.42 15th June 2020 Fix Tamper for Pyboard D. Ref
 # https://forum.micropython.org/viewtopic.php?f=20&t=8518&p=48337
 # V0.4 10th October 2016
 # why() function adapted: old version broken by firmware change
@@ -16,14 +16,17 @@ import pyb, stm, os, utime, uctypes, machine
 d_series = os.uname().machine.split(' ')[0][:4] == 'PYBD'
 
 usb_connected = False
-if pyb.usb_mode() is not None:                  # User has enabled CDC in boot.py
-    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
+if pyb.usb_mode() is not None:  # User has enabled CDC in boot.py
+    if d_series:
+        usb_connected = pyb.Pin.board.USB_HS_DP() ==1 or pyb.Pin.board.USB_DP() == 1
+    else:
+        usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
     if not usb_connected:
-        pyb.usb_mode(None)                      # Save power
+        pyb.usb_mode(None)  # Save power
 
 # CODE RUNS ON IMPORT **** END ****
 
-def bounds(val, minval, maxval, msg):           # Bounds check
+def bounds(val, minval, maxval, msg):  # Bounds check
     if not (val >= minval and val <= maxval):
         raise ValueError(msg)
 
@@ -38,9 +41,9 @@ def singleton(cls):
 class RTCError(OSError):
     pass
 
-def cprint(*args, **kwargs):                    # Conditional print: USB fails if low power modes are used
+def cprint(*args, **kwargs):  # Conditional print: USB fails if low power modes are used
     global usb_connected
-    if not usb_connected:                       # assume a UART has been specified in boot.py
+    if not usb_connected:  # assume a UART has been specified in boot.py
         print(*args, **kwargs)
 
 # Count the trailing zeros in an integer
@@ -74,7 +77,7 @@ class BkpRAM(object):
         stm.mem32[self.BKPSRAM + idx * 4] = val
     @property
     def ba(self):
-        return self._ba                         # Access as bytearray
+        return self._ba  # Access as bytearray
 
 # ***** RTC REGISTERS *****
 
@@ -103,26 +106,30 @@ def lpdelay(ms):                                # Low power delay. Note stop() k
 
 # ***** TAMPER (X18) PIN SUPPORT *****
 
+# Changes for Pyboard D ref https://forum.micropython.org/viewtopic.php?f=20&t=8518
 @singleton
-class Tamper(object):
+class Tamper:
     def __init__(self):
         self.edge_triggered = False
         self.triggerlevel = 0
         self.tampmask = 0
-        self.disable()                          # Ensure no events occur until we're ready
-        self.pin = pyb.Pin.board.X18
-        self.pin_configured = False             # Conserve power: enable pullup only if needed
+        self.disable()  # Ensure no events occur until we're ready
+        self.pin = pyb.Pin.cpu.C13  # X18 doesn't exist on Pyboard D
+        self.pin_configured = False  # Conserve power: enable pullup only if needed
         self.setup()
 
-    def setup(self, level = 0, *, freq = 16, samples = 2, edge = False):
+    def setup(self, level=0, *, freq=16, samples=2, edge=False):
         self.tampmask = 0
         if level == 1:
-            self.tampmask |= 2
+            self.tampmask |= 2 | (1 << 15)  # Disable pullup and precharge
             self.triggerlevel = 1
         elif level == 0:
             self.triggerlevel = 0
         else:
             raise ValueError("level must be 0 or 1")
+        if d_series:
+            self.tampmask |= (1 << 17)  # Disable erasure of backup registers
+
         if type(edge) == bool:
             self.edge_triggered = edge
         else:
@@ -139,7 +146,10 @@ class Tamper(object):
 
     def _pinconfig(self):
         if not self.pin_configured:
-            self.pin.init(mode = pyb.Pin.IN, pull = pyb.Pin.PULL_UP)
+            if self.level:
+                self.pin.init(mode = pyb.Pin.IN, pull = pyb.Pin.PULL_DOWN)
+            else:
+                self.pin.init(mode = pyb.Pin.IN, pull = pyb.Pin.PULL_UP)
             self.pin_configured = True
 
     def disable(self):
