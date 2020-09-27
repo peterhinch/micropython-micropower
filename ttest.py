@@ -75,5 +75,3 @@ else:
     for led in leds:
         led.off()
     leds[1].on()  # Green LED: debugging session.
-    print('Time left', timeleft)
-

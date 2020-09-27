@@ -6,17 +6,26 @@ V1.0, V1.1 and D series. The other platforms based on the STM chips may have
 different hardware functionality. This applies to the Pyboard Lite which
 supports only a subset.
 
+# The Pyboard D
+
+There is currently an issue with Pyboard D firmware which precludes the use of
+the X1 pin to recover from standby. This is subject to
+[this PR](https://github.com/micropython/micropython/pull/6494). This is
+problematic because the other hardware wakeup is via pin X18 which is only
+available on the wbus and WBUS_DIP68 adaptor. A solution is to build from this
+PR. Alternatively replace `ports/stm32/powerctrl.c` with that in the `d_series`
+directory and rebuild.
+
 ## Introduction
 
 This module provides access to features of the Pyboard which are useful in low
 power applications but not supported in firmware at the time of writing: check
-for official support for any specific feature before using. The modules
-`alarm.py` and `ttest.py` provide simple demonstrations of its use. Access
-to the following processor features is provided:
+for official support for any specific feature before using. Access to the
+following processor features is provided:
 
  1. 4KB of backup RAM (optionally battery-backed) - accessible as words or bytes.
  2. 20 general purpose 32-bit registers also battery backed.
- 3. Wakeup fom standby by means of two Pyboard pins.
+ 3. Wakeup from standby by means of two Pyboard pins.
  4. Wakeup by means of two independent real time clock (RTC) alarms.
  5. Access to board voltages and CPU temperature without the drawbacks of
  `ADCAll`.
@@ -26,9 +35,19 @@ low power alternative to the official `delay()` function.
 
 All code is released under the [MIT license](./LICENSE)
 
+## Test scripts
+
+ 1. `alarm.py` Illustrates wakeup from two RTC alarms.
+ 2. `ttest.py` Wakes up periodically from an RTC alarm. Can be woken by linking
+ pin X18 to Gnd or linking pin X1 to 3V3. Note that on the Pyboard D the latter
+ requires a modified firmware build as described above.
+
+The `ttest` script illustrates a means of ensuring that the RTC alarm operates
+at fixed intervals in the presence of pin wakeups.
+
 ## A typical application
 
-When a Pyboard goes into standby its consumption drops to about 6uA. When it is
+When a Pyboard goes into standby its consumption drops to about 6μA. When it is
 woken, program execution begins as if the board had been initially powered up:
 `boot.py` then `main.py` are executed. Unless `main.py` imports your
 application, a REPL prompt will result. Assuming your application is re-run,
@@ -75,7 +94,9 @@ shortly before `pyb.standby`.
 
 The module provides a single global variable:  
 `usb_connected` A boolean, `True` if REPL via USB is enabled and a physical
-USB connection is in place.
+USB connection is in place. On the Pyboard 1.x this returns `True` if power is
+supplied from the USB connector. On the D series it returns `True` only if a
+terminal session is running on the USB connector.
 
 ### Functions
 
@@ -125,7 +146,7 @@ The module provides the following classes:
 
 This function accepts one argument: a delay in ms and is a low power replacement
 for `pyb.delay()`. The function normally uses `pyb.stop` to reduce power
-consumption from 20mA to 500uA. If USB is connected it reverts to `pyb.delay`
+consumption from 20mA to 500μA. If USB is connected it reverts to `pyb.delay`
 to avoid killing the USB connection. There is a subtle issue when using this
 function: `pyb` loses all sense of time when the Pyboard is stopped.
 Consequently you can't use functions such as `pyb.elapsed_millis` to keep
