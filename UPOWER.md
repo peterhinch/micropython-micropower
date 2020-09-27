@@ -41,6 +41,7 @@ All code is released under the [MIT license](./LICENSE)
  2. `ttest.py` Wakes up periodically from an RTC alarm. Can be woken by linking
  pin X18 to Gnd or linking pin X1 to 3V3. Note that on the Pyboard D the latter
  requires a modified firmware build as described above.
+ 3. `ds_test.py` Tests the Pyboard D specific `WakeupPin` class.
 
 The `ttest` script illustrates a means of ensuring that the RTC alarm operates
 at fixed intervals in the presence of pin wakeups.
@@ -98,7 +99,7 @@ USB connection is in place. On the Pyboard 1.x this returns `True` if power is
 supplied from the USB connector. On the D series it returns `True` only if a
 terminal session is running on the USB connector.
 
-### Functions
+### Principal functions
 
 The module provides the following functions:  
  1. `lpdelay` A low power alternative to `pyb.delay()`.
@@ -113,25 +114,26 @@ The module provides the following functions:
  Arguments `delta` the delay period in ms, `addr` the address where the time
  was saved (default 1021).
  6. `cprint` Same usage as `print` but does nothing if USB is connected.
- 7. `v33` No args. Returns Vdd. If Vin > 3.3V Vdd should read approximately
+ 7. `why` No args. Returns the reason for a wakeup event.
+ 8. `bkpram_ok` No args. Detection of valid data in backup RAM after a
+ power up event. Returns `True` if RAM has retained data (i.e. it was battery
+ backed during outage).
+
+### Other functions
+
+These functions were implemented to overcome a problem with the `pyb.ADCAll`
+class. This has been fixed but the functions are retained to avoid breaking
+code.  
+ 1. `v33` No args. Returns Vdd. If Vin > 3.3V Vdd should read approximately
  3.3V.  Lower values indicate a Vin which has dropped below 3.3V typically due
  to a failing battery.
- 8. `vref` Returns the reference voltage.
- 9. `vbat` Returns the backup battery voltage (if fitted).
- 10. `temperature` Returns the chip temperature in deg C. Note that the chip
+ 2. `vref` Returns the reference voltage.
+ 3. `vbat` Returns the backup battery voltage (if fitted).
+ 4. `temperature` Returns the chip temperature in °C. Note that the chip
  datasheet points out  that the absolute accuracy of this is poor, varies
  greatly from one chip to another, and is best suited for monitoring changes in
  temperature. It produces spectacularly poor results if the 3.3V supply drops
  out of spec.
- 11. `why` No args. Returns the reason for a wakeup event.
- 12. `bkpram_ok` No args. Detection of valid data in backup RAM after a
- power up event. Returns `True` if RAM has retained data (i.e. it was battery
- backed during outage).
-
-Items 8-11 avoid the drawbacks of the `pyb.ADCAll` class. Instantiating this
-turns all available pins into ADC inputs. Further its `read_core_vbat()`
-method returns incorrect results if the 3.3V supply is low for example due to a
-failing battery.
 
 ### Classes
 
@@ -365,6 +367,39 @@ disabled by the constructor.
 
 `pinvalue` Property returning the value of the signal on the pin: 0 is low, 1
 high.
+
+## WakeupPin class (Pyboard D only)
+
+The Pyboard D can wake from standby by means of inputs on the following pins.
+Note the pin name aliases:
+ 1. `A0   X1  W19`
+ 2. `A2   X3  W15`
+ 3. `C1       W24`
+ 4. `C13      W26`
+
+It does not seem to be possible to configure the internal pullups or pull-downs
+in this mode, so if switches are used an external resistor must be supplied.
+Wakeups may be on a rising or falling transition.
+
+Constructor:  
+This takes two args, a `Pin` instance and `rising=True`. The `Pin` instance
+does not need to be configured. If `rising` is `True`, wakeup will occur on a
+low to high transition. A `ValueError` will result if the host is not a Pyboard
+D or if the `Pin` instance is not one of the above pins.
+
+Methods:  
+ 1. `enable()` enables the wkup interrupt. Call just before issuing
+ `pyb.standby()` and after the use of any other wkup methods as it reconfigures
+ the pin.
+ 2. `wait_inactive()` This method returns when the pin has returned to the
+ inactive state. This might be used to debounce a switch contact: call
+ `lpdelay(50)` after the function returns and before entering standby to ensure
+ that contact bounce is over.
+ 3. `disable()` disables the interrupt. Not normally required as the interrupt
+ is disabled by the constructor.
+
+Property:  
+ 1. `pinvalue` Returns the value of the signal on the pin: 0 is low, 1 high.
 
 # Module ttest
 

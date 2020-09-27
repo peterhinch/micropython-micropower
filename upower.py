@@ -177,13 +177,13 @@ class Tamper:
         return self.pin.value()
 
     def enable(self):
-        BIT21 = 1 << 21                                 # Tamper mask bit
+        BIT21 = 1 << 21  # Tamper mask bit
         self.disable()
-        stm.mem32[stm.EXTI + stm.EXTI_IMR] |= BIT21     # Set up ext interrupt
-        stm.mem32[stm.EXTI + stm.EXTI_RTSR] |= BIT21    # Rising edge
-        stm.mem32[stm.EXTI + stm.EXTI_PR] |= BIT21      # Clear pending bit
+        stm.mem32[stm.EXTI + stm.EXTI_IMR] |= BIT21  # Set up ext interrupt
+        stm.mem32[stm.EXTI + stm.EXTI_RTSR] |= BIT21  # Rising edge
+        stm.mem32[stm.EXTI + stm.EXTI_PR] |= BIT21  # Clear pending bit
 
-        stm.mem32[stm.RTC + stm.RTC_ISR] &= 0xdfff      # Clear tamp1f flag
+        stm.mem32[stm.RTC + stm.RTC_ISR] &= 0xdfff  # Clear tamp1f flag
         if d_series:
             stm.mem32[stm.PWR + stm.PWR_CR2] |= 0x3f  # Clear power wakeup flag WUF
             stm.mem32[stm.RTC + stm.RTC_TAMPCR] = self.tampmask | 5 # Tamper interrupt enable and tamper1 enable
@@ -194,11 +194,11 @@ class Tamper:
 # ***** WKUP PIN (X1) SUPPORT *****
 
 @singleton
-class wakeup_X1:                                # Support wakeup on low-high edge on pin X1
+class wakeup_X1:  # Support wakeup on low-high edge on pin X1
     def __init__(self):
         self.disable()
-        self.pin = pyb.Pin.board.X1                     # Don't configure pin unless user accesses wkup
-                                                        # On the Espruino Pico change X1 to A0 (issue #1)
+        self.pin = pyb.Pin.board.X1  # Don't configure pin unless user accesses wkup
+        # On the Espruino Pico change X1 to A0 (issue #1)
         self.pin_configured = False
 
     def _pinconfig(self):
@@ -222,12 +222,46 @@ class wakeup_X1:                                # Support wakeup on low-high edg
 
     def wait_inactive(self):
         self._pinconfig()
-        while self.pin.value() == 1:                    # Wait for pin to go low
+        while self.pin.value() == 1:  # Wait for pin to go low
             lpdelay(50)
 
     @property
     def pinvalue(self):
         self._pinconfig()
+        return self.pin.value()
+
+# ***** PYBOARD D WKUP PIN SUPPORT *****
+
+# Support wakeup on pin A0, A2, C1 or C13
+# Caller passes a Pin object. Pullup configuration does not work: if a switch is used
+# an external pull up or down is required.
+
+class WakeupPin:
+    def __init__(self, pin, rising=True):
+        if not d_series:
+            raise ValueError('Only valid on Pyboard D')
+        # Raise ValueError on invalid pin
+        self.idx = ('A0', 'A2', 'C1', 'C13').index(pin.name())
+        self.disable()
+        self.pin = pin
+        self.rising = rising
+
+    def enable(self):
+        cr2 = 0x3f
+        if not self.rising:
+            cr2 |= (0x100 << self.idx)  # Set WUPP bit if falling edge
+        stm.mem32[stm.PWR + stm.PWR_CR2] |= cr2  # Clear all power wakeup flags, set WUPP for current pin
+        stm.mem32[stm.PWR + stm.PWR_CSR2] |= (0x100 << self.idx) # Enable current pin wakeup
+
+    def disable(self):
+        stm.mem32[stm.PWR + stm.PWR_CSR2] &= ~(0x100 << self.idx)  # Disable wakeup
+
+    def wait_inactive(self):
+        while self.pin.value() == self.rising:  # Wait for pin to go inactive
+            lpdelay(50)
+
+    @property
+    def pinvalue(self):
         return self.pin.value()
 
 # ***** RTC TIMER SUPPORT *****
@@ -333,8 +367,9 @@ def why():
         result = 'ALARM_A'
     else:
         if d_series:
-            if stm.mem32[stm.PWR + stm.PWR_CSR2] & 1:  # WUF set: the only remaining cause is X1 (?)
-                result = 'X1' # if WUF not set, cause unknown, return None
+            r = stm.mem32[stm.PWR + stm.PWR_CSR2] & 0xf
+            if r > 0:
+                result = ('X1', 'X3', 'C1', 'X18')[ctz(r)]
         else:
             if stm.mem32[stm.PWR + stm.PWR_CSR] & 1:  # WUF set: the only remaining cause is X1 (?)
                 result = 'X1' # if WUF not set, cause unknown, return None
