@@ -7,12 +7,12 @@
 # Note that the Pyboard flashes the green LED briefly on waking from standby.
 import stm, pyb, upower, machine
 
-red, green, yellow, blue = (pyb.LED(x) for x in range(1, 5))
+red, green, yellow = (pyb.LED(x) for x in range(1, 4))  # LED(3) is blue, not yellow, on D series
 rtc = pyb.RTC()
 rtc.wakeup(None) # If we have a backup battery clear down any setting from a previously running program
 reason = machine.reset_cause()                           # Why have we woken?
 if reason == machine.PWRON_RESET or reason == machine.HARD_RESET: # first boot
-    rtc.datetime((2015, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
+    rtc.datetime((2020, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
     aa = upower.Alarm('a')
     aa.timeset(second = 39)
     ab = upower.Alarm('b')

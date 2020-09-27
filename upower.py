@@ -1,11 +1,10 @@
 # upower.py Enables access to functions useful in low power Pyboard projects
-# Copyright 2016 Peter Hinch
+# Copyright 2016-2020 Peter Hinch
 # This code is released under the MIT licence
 
+# V0.43 Sep 2020 Further Pyboard D fixes.
 # V0.42 15th June 2020 Fix Tamper for Pyboard D. Ref
 # https://forum.micropython.org/viewtopic.php?f=20&t=8518&p=48337
-# V0.4 10th October 2016
-# why() function adapted: old version broken by firmware change
 
 
 # http://www.st.com/web/en/resource/technical/document/application_note/DM00025071.pdf
@@ -14,11 +13,15 @@ import pyb, stm, os, utime, uctypes, machine
 # CODE RUNS ON IMPORT **** START ****
 
 d_series = os.uname().machine.split(' ')[0][:4] == 'PYBD'
+#if d_series:
+    #stm.mem32[stm.PWR + stm.PWR_CSR1] |= 0x200 # BRE backup regulator enable bit (0x300?)
 
+# https://forum.micropython.org/viewtopic.php?f=20&t=6222&p=35497
 usb_connected = False
-if pyb.usb_mode() is not None:  # User has enabled CDC in boot.py
+if pyb.usb_mode() is not None:  # User has enabled VCP in boot.py
     if d_series:
-        usb_connected = pyb.Pin.board.USB_HS_DP() ==1 or pyb.Pin.board.USB_DP() == 1
+        # Detect an active debugging session
+        usb_connected = pyb.USB_VCP().isconnected()
     else:
         usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
     if not usb_connected:
@@ -59,13 +62,18 @@ def ctz(n):
 # ***** BACKUP RAM SUPPORT *****
 
 @singleton
-class BkpRAM(object):
+class BkpRAM:
     BKPSRAM = 0x40024000
     def __init__(self):
         stm.mem32[stm.RCC + stm.RCC_APB1ENR] |= 0x10000000 # PWREN bit
-        stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100  # Set the DBP bit in the PWR power control register
-        stm.mem32[stm.RCC + stm.RCC_AHB1ENR] |= 0x40000 # enable BKPSRAMEN
-        stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup register enable bit
+        if d_series:
+            stm.mem32[stm.PWR + stm.PWR_CR1] |= 0x100  # Set the DBP bit in the PWR power control register
+            stm.mem32[stm.RCC + stm.RCC_AHB1ENR] |= 0x40000 # enable BKPSRAMEN
+            stm.mem32[stm.PWR + stm.PWR_CSR1] |= 0x200 # BRE backup regulator enable bit
+        else:
+            stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100  # Set the DBP bit in the PWR power control register
+            stm.mem32[stm.RCC + stm.RCC_AHB1ENR] |= 0x40000 # enable BKPSRAMEN
+            stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup register enable bit
         self._ba = uctypes.bytearray_at(self.BKPSRAM, 4096)
     def idxcheck(self, idx):
         bounds(idx, 0, 0x3ff, 'RTC backup RAM index out of range')
@@ -82,7 +90,7 @@ class BkpRAM(object):
 # ***** RTC REGISTERS *****
 
 @singleton
-class RTCRegs(object):
+class RTCRegs:
     def idxcheck(self, idx):
         bounds(idx, 0, 19, 'RTC register index out of range')
     def __getitem__(self, idx):
@@ -146,7 +154,7 @@ class Tamper:
 
     def _pinconfig(self):
         if not self.pin_configured:
-            if self.level:
+            if self.triggerlevel:
                 self.pin.init(mode = pyb.Pin.IN, pull = pyb.Pin.PULL_DOWN)
             else:
                 self.pin.init(mode = pyb.Pin.IN, pull = pyb.Pin.PULL_UP)
@@ -177,7 +185,7 @@ class Tamper:
 
         stm.mem32[stm.RTC + stm.RTC_ISR] &= 0xdfff      # Clear tamp1f flag
         if d_series:
-            stm.mem32[stm.PWR + stm.PWR_CSR2] |= 4  # Clear power wakeup flag WUF
+            stm.mem32[stm.PWR + stm.PWR_CR2] |= 0x3f  # Clear power wakeup flag WUF
             stm.mem32[stm.RTC + stm.RTC_TAMPCR] = self.tampmask | 5 # Tamper interrupt enable and tamper1 enable
         else:
             stm.mem32[stm.PWR + stm.PWR_CR] |= 4  # Clear power wakeup flag WUF
@@ -186,7 +194,7 @@ class Tamper:
 # ***** WKUP PIN (X1) SUPPORT *****
 
 @singleton
-class wakeup_X1(object):                                # Support wakeup on low-high edge on pin X1
+class wakeup_X1:                                # Support wakeup on low-high edge on pin X1
     def __init__(self):
         self.disable()
         self.pin = pyb.Pin.board.X1                     # Don't configure pin unless user accesses wkup
@@ -198,12 +206,19 @@ class wakeup_X1(object):                                # Support wakeup on low-
             self.pin.init(mode = pyb.Pin.IN, pull = pyb.Pin.PULL_DOWN)
             self.pin_configured = True
 
-    def enable(self):                                   # In this mode pin has pulldown enabled
-        stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # set CWUF to clear WUF in PWR_CSR
-        stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x100       # Enable wakeup
+    def enable(self):  # In this mode pin has pulldown enabled
+        if d_series:
+            stm.mem32[stm.PWR + stm.PWR_CR2] |= 0x3f  # Clear power wakeup flag WUF
+            stm.mem32[stm.PWR + stm.PWR_CSR2] |= 0x100  # Enable X1 wakeup
+        else:
+            stm.mem32[stm.PWR + stm.PWR_CR] |= 4  # set CWUF to clear WUF in PWR_CSR
+            stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x100  # Enable wakeup
 
     def disable(self):
-        stm.mem32[stm.PWR + stm.PWR_CSR] &= 0xfffffeff  # Disable wakeup
+        if d_series:
+            stm.mem32[stm.PWR + stm.PWR_CSR2] &= 0xfffffeff  # Disable wakeup
+        else:
+            stm.mem32[stm.PWR + stm.PWR_CSR] &= 0xfffffeff  # Disable wakeup
 
     def wait_inactive(self):
         self._pinconfig()
@@ -220,7 +235,7 @@ class wakeup_X1(object):                                # Support wakeup on low-
 def bcd(x): # integer to BCD (2 digit max)
     return (x % 10) + ((x//10) << 4)
 
-class Alarm(object):
+class Alarm:
     instantiated = False
     def __init__(self, ident):
         if not ident in ('a','A','b','B'):
@@ -292,7 +307,10 @@ class Alarm(object):
         if stm.mem32[stm.RTC + stm.RTC_ISR] & self.albit :  # test ALRxWF IN RTC_ISR
             stm.mem32[stm.RTC + self.alreg] = self.lval + (self.uval << 16)
             stm.mem32[stm.RTC + stm.RTC_ISR] &= self.alisr  # Clear the RTC alarm ALRxF flag
-            stm.mem32[stm.PWR + stm.PWR_CR] |= 4            # Clear the PWR Wakeup (WUF) flag
+            if d_series:
+                stm.mem32[stm.PWR + stm.PWR_CR2] |= 0x3f  # Clear power wakeup flag WUF
+            else:
+                stm.mem32[stm.PWR + stm.PWR_CR] |= 4  # Clear the PWR Wakeup (WUF) flag
             stm.mem32[stm.RTC+stm.RTC_CR] |= self.alenable  # Enable the RTC alarm and interrupt
             stm.mem32[stm.RTC + stm.RTC_WPR] = 0xff
         else:
@@ -313,14 +331,22 @@ def why():
     elif rtc_isr & 0x100 :
         stm.mem32[stm.RTC + stm.RTC_ISR] |= 0x100
         result = 'ALARM_A'
-    elif stm.mem32[stm.PWR + stm.PWR_CSR] & 1:          # WUF set: the only remaining cause is X1 (?)
-        result = 'X1'                                   # if WUF not set, cause unknown, return None
-    stm.mem32[stm.PWR + stm.PWR_CR] |= 4                # Clear the PWR Wakeup (WUF) flag
+    else:
+        if d_series:
+            if stm.mem32[stm.PWR + stm.PWR_CSR2] & 1:  # WUF set: the only remaining cause is X1 (?)
+                result = 'X1' # if WUF not set, cause unknown, return None
+        else:
+            if stm.mem32[stm.PWR + stm.PWR_CSR] & 1:  # WUF set: the only remaining cause is X1 (?)
+                result = 'X1' # if WUF not set, cause unknown, return None
+    if d_series:
+        stm.mem32[stm.PWR + stm.PWR_CR2] |= 0x3f  # Clear power wakeup flag WUF
+    else:
+        stm.mem32[stm.PWR + stm.PWR_CR] |= 4  # Clear the PWR Wakeup (WUF) flag
     return result
 
 def bkpram_ok():
     bkpram = BkpRAM()
-    if bkpram[1023] == 0x27288a6f:              # backup RAM has been used before
+    if bkpram[1023] == 0x27288a6f:  # backup RAM has been used before
         return True
     else:
         bkpram[1023] = 0x27288a6f
@@ -329,12 +355,15 @@ def bkpram_ok():
 def now():  # Return the current time from the RTC in millisecs from year 2000
     rtc = pyb.RTC()
     secs = utime.time()
-    ms = 1000*(255 -rtc.datetime()[7]) >> 8
-    if ms < 50:                                 # Might have just rolled over
+    if d_series:
+        ms = rtc.datetime()[7] // 1000
+    else:
+        ms = 1000*(255 -rtc.datetime()[7]) >> 8
+    if ms < 50:  # Might have just rolled over
         secs = utime.time()
     return ms + 1000 * secs
 
-def lp_elapsed_ms(tstart):                      # An elapsed_ms function which works during lpdelays
+def lp_elapsed_ms(tstart):  # An elapsed_ms function which works during lpdelays
     return now() - tstart
 
 # Save the current time in mS 

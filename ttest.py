@@ -1,14 +1,20 @@
 # ttest.py Demonstrate ways to exit from pyb.standby()
 
-# Copyright Peter Hinch
-# V0.4 10th October 2016 Now uses machine.reset_cause()
+# Copyright 2016-2020 Peter Hinch
 # This code is released under the MIT licence
+
+# V0.43 Oct 2020 Tested on Pyboard D
+# V0.4 10th October 2016 Now uses machine.reset_cause()
 
 # draws 32uA between LED flashes runing from flash.
 # This doesn't do much running from USB because the low power modes kill the USB interface.
-# Note that the blue LED is best avoided in these applications as it currently uses PWM: this can
+# Pyboard 1.x: 
+# the blue LED is best avoided in these applications as it currently uses PWM: this can
 # lead to some odd effects in time dependent applications.
-# Note also that pyboard firmware briefly flashes the green LED on all wakeups.
+# Pyboard D:
+# LED[3] described as yellow is actually blue.
+# All boards:
+# Pyboard firmware briefly flashes the green LED on all wakeups.
 
 import pyb, upower, machine
 tamper = upower.Tamper()
@@ -22,8 +28,8 @@ for led in leds:
     led.off()
 
 reason = machine.reset_cause()                  # Why have we woken?
-if reason == machine.PWRON_RESET or reason == machine.HARD_RESET: # first boot
-    rtc.datetime((2016, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
+if reason in (machine.PWRON_RESET, machine.HARD_RESET, machine.SOFT_RESET): # first boot
+    rtc.datetime((2020, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
     upower.savetime()
     if upower.bkpram_ok():                      # backup RAM holds valid data
         leds[2].on()                            # Y only
@@ -48,6 +54,7 @@ t = rtc.datetime()[4:7]
 upower.cprint('{:02d}.{:02d}.{:02d}'.format(t[0],t[1],t[2]))
 
 upower.lpdelay(500)                             # ensure LED visible before standby turns it off
+
 tamper.wait_inactive()                          # Wait for tamper signal to go away
 wkup.wait_inactive()
 upower.lpdelay(50)                              # Wait out any contact bounce
@@ -64,3 +71,9 @@ tamper.enable()
 wkup.enable()
 if not upower.usb_connected:
     pyb.standby()                               # This will set pins hi-z and turn LEDs off
+else:
+    for led in leds:
+        led.off()
+    leds[1].on()  # Green LED: debugging session.
+    print('Time left', timeleft)
+
