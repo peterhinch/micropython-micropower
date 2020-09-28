@@ -191,11 +191,13 @@ class Tamper:
             stm.mem32[stm.PWR + stm.PWR_CR] |= 4  # Clear power wakeup flag WUF
             stm.mem32[stm.RTC + stm.RTC_TAFCR] = self.tampmask | 5 # Tamper interrupt enable and tamper1 enable
 
-# ***** WKUP PIN (X1) SUPPORT *****
+# ***** WKUP PIN (X1) SUPPORT (V1.x) *****
 
 @singleton
 class wakeup_X1:  # Support wakeup on low-high edge on pin X1
     def __init__(self):
+        if d_series:
+            raise ValueError('Not supported by D series.')
         self.disable()
         self.pin = pyb.Pin.board.X1  # Don't configure pin unless user accesses wkup
         # On the Espruino Pico change X1 to A0 (issue #1)
@@ -207,18 +209,11 @@ class wakeup_X1:  # Support wakeup on low-high edge on pin X1
             self.pin_configured = True
 
     def enable(self):  # In this mode pin has pulldown enabled
-        if d_series:
-            stm.mem32[stm.PWR + stm.PWR_CR2] |= 0x3f  # Clear power wakeup flag WUF
-            stm.mem32[stm.PWR + stm.PWR_CSR2] |= 0x100  # Enable X1 wakeup
-        else:
-            stm.mem32[stm.PWR + stm.PWR_CR] |= 4  # set CWUF to clear WUF in PWR_CSR
-            stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x100  # Enable wakeup
+        stm.mem32[stm.PWR + stm.PWR_CR] |= 4  # set CWUF to clear WUF in PWR_CSR
+        stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x100  # Enable wakeup
 
     def disable(self):
-        if d_series:
-            stm.mem32[stm.PWR + stm.PWR_CSR2] &= 0xfffffeff  # Disable wakeup
-        else:
-            stm.mem32[stm.PWR + stm.PWR_CSR] &= 0xfffffeff  # Disable wakeup
+        stm.mem32[stm.PWR + stm.PWR_CSR] &= 0xfffffeff  # Disable wakeup
 
     def wait_inactive(self):
         self._pinconfig()

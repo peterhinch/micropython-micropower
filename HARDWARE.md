@@ -252,6 +252,10 @@ The following calculations and measurements are based on a Pyboard 1.1 with
 hardware as described above. Similar results can be expected for a D series
 with the switchable 3.3V regulator turned on only when required.
 
+I tested a Pyboard D in a WBUS_DIP28 adaptor powered from a LiPo battery. The
+board ran a modified version of `ds_test.py` which woke only from RTC alarms.
+Current consumption between wakeups was 23.6μA.
+
 The capacity of small batteries is measured in milliamp hours (mAH), a measure
 of electric charge. For purposes of measurement on the Pyboard this is rather a
 large unit, and milliamp seconds (mAS) or millicoulomb is used here.
