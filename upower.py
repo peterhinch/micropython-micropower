@@ -73,7 +73,7 @@ class BkpRAM:
         else:
             stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100  # Set the DBP bit in the PWR power control register
             stm.mem32[stm.RCC + stm.RCC_AHB1ENR] |= 0x40000 # enable BKPSRAMEN
-            stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup register enable bit
+            stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup regulator enable bit
         self._ba = uctypes.bytearray_at(self.BKPSRAM, 4096)
     def idxcheck(self, idx):
         bounds(idx, 0, 0x3ff, 'RTC backup RAM index out of range')
@@ -232,6 +232,7 @@ class wakeup_X1:  # Support wakeup on low-high edge on pin X1
 # an external pull up or down is required.
 
 class WakeupPin:
+
     def __init__(self, pin, rising=True):
         if not d_series:
             raise ValueError('Only valid on Pyboard D')
@@ -255,9 +256,11 @@ class WakeupPin:
         while self.pin.value() == self.rising:  # Wait for pin to go inactive
             lpdelay(50)
 
-    @property
     def pinvalue(self):
         return self.pin.value()
+    
+    def state(self):
+        return self.pin.value() == self.rising
 
 # ***** RTC TIMER SUPPORT *****
 
@@ -364,7 +367,7 @@ def why():
         if d_series:
             r = stm.mem32[stm.PWR + stm.PWR_CSR2] & 0xf
             if r > 0:
-                result = ('X1', 'X3', 'C1', 'X18')[ctz(r)]
+                result = ('X1', 'X3', 'C1', 'C13')[ctz(r)]
         else:
             if stm.mem32[stm.PWR + stm.PWR_CSR] & 1:  # WUF set: the only remaining cause is X1 (?)
                 result = 'X1' # if WUF not set, cause unknown, return None

@@ -10,8 +10,8 @@ supports only a subset.
 
 There is currently an issue with Pyboard D firmware which precludes the use of
 any pin to recover from standby. Ways to recover are restricted to timer alarms
-and the tamper mechanism via pin X18. Unfortunately this is only brought out on
-the wbus and WBUS_DIP68 adaptor.
+and the tamper mechanism via pin X18 (C13). Unfortunately this pin is only
+brought out on the wbus and WBUS_DIP68 adaptor.
 
 I have raised [this PR](https://github.com/micropython/micropython/pull/6494).
 Until this is accepted a solution is to build from this PR. Alternatively
@@ -25,7 +25,8 @@ power applications but not supported in firmware at the time of writing: check
 for official support for any specific feature before using. Access to the
 following processor features is provided:
 
- 1. 4KB of backup RAM (optionally battery-backed) - accessible as words or bytes.
+ 1. 4KiB of backup RAM (optionally battery-backed) - accessible as words or
+ bytes.
  2. 20 general purpose 32-bit registers also battery backed.
  3. Wakeup from standby by means of two Pyboard pins.
  4. Wakeup by means of two independent real time clock (RTC) alarms.
@@ -43,10 +44,9 @@ All code is released under the [MIT license](./LICENSE)
  2. `ttest.py` Wakes up periodically from an RTC alarm. Can be woken by linking
  pin X18 to Gnd or (on Pyboard 1.x) linking pin X1 to 3V3. On Pyboard D pin X1
  works if modified firmware is used and a pull-down is supplied.
- 3. `ds_test.py` Test script for Pyboard D. Wakes up periodically from an RTC
- alarm and can also be woken by a positive voltage on pins PA0 (X1), PA2 (X3)
- and PC1. Requires modified firmware for the wakeup pins.
-
+ 3. `ds_test.py` Test script for Pyboard D. Tests wakeup using the various
+ permitted pins. See [section 5](./UPOWER.md#5-module-ds_test).
+ 
 The `ttest` script illustrates a means of ensuring that the RTC alarm operates
 at fixed intervals in the presence of pin wakeups.
 
@@ -118,7 +118,9 @@ The module provides the following functions:
  Requires `savetime` to have been called before commencing the sleep/standby.
  Arguments `delta` the delay period in ms, `addr` the address where the time
  was saved (default 1021).
- 6. `cprint` Same usage as `print` but does nothing if USB is connected.
+ 6. `cprint` Same usage as `print` but does nothing if USB is connected. If USB
+ is connected functions such as `standby` disable USB connectivity. Issuing
+ `print()` under those circumstances would crash the program.
  7. `why` No args. Returns the reason for a wakeup event.
  8. `bkpram_ok` No args. Detection of valid data in backup RAM after a
  power up event. Returns `True` if RAM has retained data (i.e. it was battery
@@ -152,14 +154,14 @@ The module provides the following classes:
 
 ## 2.5 Function `lpdelay()`
 
-This function accepts one argument: a delay in ms and is a low power replacement
-for `pyb.delay()`. The function normally uses `pyb.stop` to reduce power
+This accepts one argument: a delay in ms. It is a low power replacement for
+`utime.sleep_ms()`. The function normally uses `pyb.stop` to reduce power
 consumption from 20mA to 500μA. If USB is connected it reverts to `pyb.delay`
 to avoid killing the USB connection. There is a subtle issue when using this
-function: `pyb` loses all sense of time when the Pyboard is stopped.
-Consequently you can't use functions such as `pyb.elapsed_millis` to keep
-track of time in a loop. The simplest solution is to use the provided
-`lp_elapsed_ms` function.
+function: the Pyboard loses all sense of time when stopped, with the RTC being
+the only valid time source. Consequently you can't use `utime` or `pyb`
+functions to keep track of time through an `lpdelay`. The simplest solution is
+to use the provided `lp_elapsed_ms` function.
 
 ## 2.6 Function `lp_elapsed_ms()`
 
@@ -179,7 +181,7 @@ Returns RTC time in milliseconds since the start of year 2000. The function is
 mainly intended for use in implementing sleep or standby delays which can be
 resumed after an interrupt from tamper or WKUP. Millisecond precision is
 meaningless in standby periods where wakeups are slow, but is relevant to sleep.
-Precision is limited to about 4ms owing to the RTC hardware.
+On Pyboard 1.x precision is limited to about 4ms owing to the RTC hardware.
 
 ## 2.8 Function `savetime()`
 
@@ -209,20 +211,21 @@ first be called to detect the conditions `PWRON_RESET` or `HARD_RESET`.
 If it returns `DEEPSLEEP_RESET` then `why()` may be called. It will
 return one of the following values:
 
- 1. 'TAMPER' Woken by the Tamper pin (X18) (C13, W26 on Pyboard D). See below.
+ 1. 'TAMPER' Woken by the Tamper pin (X18, C13, W26). See below.
  2. 'WAKEUP' Woken by RTC.wakeup().
  3. 'ALARM_A' Woken by RTC alarm A.
  4. 'ALARM_B' Woken by RTC alarm B.
- 5. 'X1' Woken by the WKUP pin (X1). Also known as PA0, W19.
- 6. 'X3' (AKA PA2, W15) (Pyboard D only).
- 7. 'C1' (AKA W24) (Pyboard D only).
- 8. 'X18' (AKA C13, W26) (Pyboard D only). See below.
- 9. `None` Reason unknown.
+ 5. 'X1' Woken by the WKUP pin (X1, PA0, W19).
+ 6. 'X3' (X3, PA2, W15) (Pyboard D only).
+ 7. 'C1' (C1, W24) (Pyboard D only).
+ 8. 'C13' (C13, X18, W26) (Pyboard D only). See below.
+ 9. `None` Reason unknown.  
+(Alternative pin names in parens).
 
-Re pin X18 on the Pyboard D, this may be used in either of two ways. The tamper
+Re pin C13 on the Pyboard D, this may be used in either of two ways. The tamper
 mechanism is designed to interface to a switch and works with standard
 firmware. Alternatively, with adapted firmware, the `WakeupPin` class may be
-used, in which case 'X18' is returned.
+used, in which case 'C13' is returned.
 
 ## 2.11 Alarm class (access RTC alarms)
 
@@ -258,6 +261,7 @@ mytimer.timeset(second = 30)
 This class enables the on-chip 4KB of battery backed RAM to be accessed as an
 array of integers or as a bytearray. The latter facilitates creating persistent
 arbitrary objects using JSON or pickle.
+
 Its initial contents after power up are arbitrary unless an RTC backup battery
 is used. Note that `savetime()` uses two 32 bit words at 1021 and 1022 by
 default and startup detection uses 1023 so these top three locations should
@@ -270,22 +274,21 @@ bkpram[0] = 22 # use as integer array
 bkpram.ba[4] = 0 # or as a bytearray
 ```
 
-The following code fragment illustrates the use of pickle to save an arbitrary
-Python object to backup RAM and restore it on a subsequent wakeup. The pickle
-module is available in the MicroPython library.
+The following code fragment illustrates the use of `ujson` to save an arbitrary
+Python object to backup RAM and restore it on a subsequent wakeup.
 
 ```python
-import pickle, upower
+import ujson, upower
 bkpram = upower.BkpRAM()
 a = {'rats':77, 'dogs':99,'elephants':9, 'zoo':100}
-z = pickle.dumps(a).encode('utf8')
+z = ujson.dumps(a).encode('utf8')
 bkpram[0] = len(z)
 bkpram.ba[4: 4+len(z)] = z # Copy into backup RAM
  # Resumption after standby
-import pickle, upower
+import ujson, upower
 bkpram = upower.BkpRAM()
  # retrieve dictionary
-a = pickle.loads(bytes(bkpram.ba[4:4+bkpram[0]]).decode('utf-8'))
+a = ujson.loads(bytes(bkpram.ba[4:4+bkpram[0]]).decode('utf-8'))
 ```
 
 ## 2.13 RTCRegs class (RTC Register access)
@@ -355,10 +358,10 @@ See `ttest.py` for an example of its usage.
 
 ## 2.15 wakeup_X1 class (Enable wakeup on pin X1: Pyboard 1.x)
 
-Enabling this converts pin X1 into an input with a pulldown resistor enabled
-even in standby mode. A low to high transition will wake the Pyboard from
-standby. The following code fragment illustrates its use. A complete example is
-in `ttest.py`.
+Enabling this converts pin X1 into an input. A low to high transition will wake
+the Pyboard from standby. It is recommended to add an external pull down
+resistor if a switch is used.The following code fragment illustrates its use. A
+complete example is in `ttest.py`.
 
 ```python
 from upower import wakeup_X1
@@ -424,9 +427,8 @@ Methods:
  that contact bounce is over.
  3. `disable()` disables the interrupt. Not normally required as the interrupt
  is disabled by the constructor.
-
-Property:  
- 1. `pinvalue` Returns the value of the signal on the pin: 0 is low, 1 high.
+ 4. `pinvalue` Returns the value of the signal on the pin: 0 is low, 1 high.
+ 5. `state` Returns `True` if the pin is active.
 
 # 3. Module ttest
 
@@ -458,8 +460,22 @@ this, edit your `main.py` to include `import alarm`.
 
 # 5. Module ds_test
 
-An RTC alarm causes white to flash periodically. A high level on any of pins
-A0, A2, or C1 will wake the board. Each will flash a different LED.
+At the time of writing this test requires modified firmware as detailed in
+[section 2](./UPOWER.md#2-the-pyboard-d).
+
+This test is specific to Pyboard D and tests wakeup from any of the four legal
+pins. To run it modify `main.py` as follows:
+```python
+import ds_test
+ds_test.test('X1', 'X3' 'C1', 'C13', rising=True)
+```
+Any combination of these pins may be selected, but there must be a physical
+pull-down resistor on any that are listed. If `rising` is `False` the resistor
+must be a pullup to a voltage which will be present when the board is in
+standby; the switchable 3.3V supply is not. These pins are +5V tolerant.
+
+An RTC alarm causes white to flash periodically. A high level on any specified
+pin will wake the board. Each will flash a different LED.
 
 # 6. Coding tips
 

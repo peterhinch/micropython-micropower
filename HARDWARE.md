@@ -27,11 +27,17 @@ to recover from standby and to load and compile typical application code.
 
 The Pyboard D has an improved design, so external circuitry is not usually
 required. This is because the D series has a 3.3V regulator which is software
-switchable and may be used to control the power to peripherals and to I2C
+switchable and may be used to control the power to peripherals and I2C
 pullups. It is turned on by
 ```python
 machine.Pin.board.EN_3V3.value(1)  # 0 to turn off
 ```
+In standby mode this regulator is off. It therefore cannot be used to power
+pullups on the wakeup pins.
+
+The D series has internal I2C pullups connected to this switched 3.3V supply
+for I2C(1). I2C(2) has no pullups: these must be supplied externally.
+
 The parts of this document detailing external circuitry and the module
 `micropower.py` may be ignored for the D series. General observations about
 nonvolatile storage, SD cards and power calculations remain relevant.
@@ -52,39 +58,35 @@ To achieve minimum power the code must be designed so that the Pyboard spends
 the majority of its time in standby mode. In this mode the current drawn by the
 Pyboard drops to some 6μA. Note that on recovery from standby the code will be
 loaded and run from the start: program state is not retained. Limited state
-information can be retained in the RTC backup registers: in the example below
-one is used to detect whether the program has run because of an initial power
-up or in response to an RTC interrupt. A typical application will use code
-along these lines:
+information can be retained in the RTC backup registers and in RTC backup RAM.
+There are 20 32-bit backup registers and 4KiB of backup RAM. These are retained
+through a standby period. If an RTC backup battery is provided these will also
+be reyained through a power outage. The [upower](./UPOWER.md) module provides
+simple ways to access these.
 
+A typical application will use code along these lines:
 ```python
-import pyb, stm
+import pyb
+import machine
+import upower
 rtc = pyb.RTC()
+rtc.wakeup(None) # If we have a backup battery clear down any setting from a previously running program
 
-usb_connected = False
-if pyb.usb_mode() is not None:  # User has enabled CDC in boot.py
-    usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
-    if not usb_connected:  # Not physically connected
-        pyb.usb_mode(None)  # Save power
-
-if stm.mem32[stm.RTC + stm.RTC_BKP1R] == 0:  # first boot
+if reason in (machine.PWRON_RESET, machine.HARD_RESET, machine.SOFT_RESET):  # first boot
    rtc.datetime((2020, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
 
  # code to run every time goes here
 rtc.wakeup(20000)
-stm.mem32[stm.RTC + stm.RTC_BKP1R] = 1  # indicate that we are going into standby mode
-if not usb_connected:
+if not upower.usb_connected:
    pyb.standby()
 ```
-
-Note that this code does not use the `upower` module which would simplify it.
-The intention here is to illustrate the principles of low power operation.
+When the wakeup period has elapsed the board will wake up and the script will
+run again.
 
 The `usb_connected` logic simplifies debugging using a USB cable while
-minimising power when run without USB. The first boot detection is a
-potentially useful convenience. In general debugging micropower applications is
-simplified by using a UART rather than USB: this is strongly recommended and is
-discussed below.
+minimising power when run without USB: `standby` permanently crashes USB. In
+general debugging micropower applications is simplified by using a UART rather
+than USB. This is strongly recommended and is discussed below.
 
 There are four ways to recover from standby: an RTC wakeup, RTC alarm wakeup, a
 tamper pin input, and a wakeup pin input. These are supported in `upower.py`.
@@ -371,7 +373,9 @@ A more computationally demanding test involved updating an epaper display with
 the following script
  
 ```python
-import pyb, epaper, stm
+import pyb
+import epaper
+import machine
 from micropower import PowerController
 rtc = pyb.RTC()
 
@@ -379,7 +383,7 @@ usb_connected = pyb.Pin.board.USB_VBUS.value() == 1
 if not usb_connected:
     pyb.usb_mode(None) # Save power
 
-if stm.mem32[stm.RTC + stm.RTC_BKP1R] == 0:     # first boot
+if reason in (machine.PWRON_RESET, machine.HARD_RESET, machine.SOFT_RESET):  # first boot
     rtc.datetime((2015, 8, 6, 4, 13, 0, 0, 0)) # Arbitrary
 
 t = rtc.datetime()[4:7]
@@ -394,7 +398,6 @@ a.umountflash() # Keep filesystem happy
 a.show()
 
 rtc.wakeup(20000)
-stm.mem32[stm.RTC + stm.RTC_BKP1R] = 1 # indicate that we are going into standby mode
 if usb_connected:
     p.power_up()                        # Power up for testing
 else:
