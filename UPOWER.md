@@ -28,7 +28,7 @@ following processor features is provided:
  1. 4KiB of backup RAM accessible as words or bytes. May be battery backed.
  Whether or not battery backed, retains data during standby.
  2. 20 general purpose 32-bit registers also battery backed.
- 3. Wakeup from standby by means of a switch on the [b]Tamper[/b] pin.
+ 3. Wakeup from standby by means of a switch on the Tamper pin.
  4. Wakeup from standby by means of two Pyboard pins (four on the D series).
  5. Wakeup by means of two independent real time clock (RTC) alarms. An alarm
  provides for (say) a wakeup every the 1st day of the month at 03:15.
