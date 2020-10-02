@@ -13,8 +13,6 @@ import pyb, stm, os, utime, uctypes, machine
 # CODE RUNS ON IMPORT **** START ****
 
 d_series = os.uname().machine.split(' ')[0][:4] == 'PYBD'
-#if d_series:
-    #stm.mem32[stm.PWR + stm.PWR_CSR1] |= 0x200 # BRE backup regulator enable bit (0x300?)
 
 # https://forum.micropython.org/viewtopic.php?f=20&t=6222&p=35497
 usb_connected = False
@@ -63,6 +61,7 @@ def ctz(n):
 
 @singleton
 class BkpRAM:
+
     BKPSRAM = 0x40024000
     def __init__(self):
         stm.mem32[stm.RCC + stm.RCC_APB1ENR] |= 0x10000000 # PWREN bit
@@ -73,7 +72,7 @@ class BkpRAM:
         else:
             stm.mem32[stm.PWR + stm.PWR_CR] |= 0x100  # Set the DBP bit in the PWR power control register
             stm.mem32[stm.RCC + stm.RCC_AHB1ENR] |= 0x40000 # enable BKPSRAMEN
-            stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200 # BRE backup regulator enable bit
+            stm.mem32[stm.PWR + stm.PWR_CSR] |= 0x200  # BRE backup regulator enable bit
         self._ba = uctypes.bytearray_at(self.BKPSRAM, 4096)
     def idxcheck(self, idx):
         bounds(idx, 0, 0x3ff, 'RTC backup RAM index out of range')
@@ -91,6 +90,7 @@ class BkpRAM:
 
 @singleton
 class RTCRegs:
+
     def idxcheck(self, idx):
         bounds(idx, 0, 19, 'RTC register index out of range')
     def __getitem__(self, idx):
@@ -102,7 +102,9 @@ class RTCRegs:
 
 
 # ***** LOW POWER pyb.delay() ALTERNATIVE *****
-def lpdelay(ms):                                # Low power delay. Note stop() kills USB
+# Low power delay. Note stop() kills USB.
+# For the duratiom it stops the time source used by utime.
+def lpdelay(ms):
     global usb_connected
     rtc = pyb.RTC()
     if usb_connected:
@@ -117,6 +119,7 @@ def lpdelay(ms):                                # Low power delay. Note stop() k
 # Changes for Pyboard D ref https://forum.micropython.org/viewtopic.php?f=20&t=8518
 @singleton
 class Tamper:
+
     def __init__(self):
         self.edge_triggered = False
         self.triggerlevel = 0
@@ -195,6 +198,7 @@ class Tamper:
 
 @singleton
 class wakeup_X1:  # Support wakeup on low-high edge on pin X1
+
     def __init__(self):
         if d_series:
             raise ValueError('Not supported by D series.')
@@ -268,6 +272,7 @@ def bcd(x): # integer to BCD (2 digit max)
     return (x % 10) + ((x//10) << 4)
 
 class Alarm:
+
     instantiated = False
     def __init__(self, ident):
         if not ident in ('a','A','b','B'):
@@ -290,50 +295,50 @@ class Alarm:
         if not Alarm.instantiated:
             BIT17 = 1 << 17
             Alarm.instantiated = True
-            stm.mem32[stm.EXTI + stm.EXTI_IMR] |= BIT17     # Set up ext interrupt
-            stm.mem32[stm.EXTI + stm.EXTI_RTSR] |= BIT17    # Rising edge
-            stm.mem32[stm.EXTI + stm.EXTI_PR] |= BIT17      # Clear pending bit
+            stm.mem32[stm.EXTI + stm.EXTI_IMR] |= BIT17  # Set up ext interrupt
+            stm.mem32[stm.EXTI + stm.EXTI_RTSR] |= BIT17  # Rising edge
+            stm.mem32[stm.EXTI + stm.EXTI_PR] |= BIT17  # Clear pending bit
 
     def timeset(self, *, day_of_month = None, weekday = None, hour = None, minute = None, second = None):
-        self.uval = 0x8080                      # Mask everything off
+        self.uval = 0x8080  # Mask everything off
         self.lval = 0x8080
         setlower = False
         if day_of_month is not None:
             bounds(day_of_month, 1 , 31, "Day of month must be between 1 and 31")
-            self.uval &= 0x7fff                # Unmask day
+            self.uval &= 0x7fff  # Unmask day
             self.uval |= (bcd(day_of_month) << 8)
             setlower = True
         elif weekday is not None:
             bounds(weekday, 1, 7, "Weekday must be from 1 (Monday) to 7")
-            self.uval &= 0x7fff                 # Unmask day
-            self.uval |= 0x4000                 # Indicate day of week
+            self.uval &= 0x7fff  # Unmask day
+            self.uval |= 0x4000  # Indicate day of week
             self.uval |= (weekday << 8)
             setlower = True
         if hour is not None:
             bounds(hour, 0, 23, "Hour must be 0 to 23")
-            self.uval &= 0xff3f                 # Unmask hour, force 24 hour format
+            self.uval &= 0xff3f  # Unmask hour, force 24 hour format
             self.uval |= bcd(hour)
             setlower = True
         elif setlower:
-            self.uval &= 0xff3f                 # Unmask hour, force 24 hour format
+            self.uval &= 0xff3f  # Unmask hour, force 24 hour format
         if minute is not None:
             bounds(minute, 0, 59, "Minute must be 0 to 59")
-            self.lval &= 0x7fff                 # Unmask minute
+            self.lval &= 0x7fff  # Unmask minute
             self.lval |= (bcd(minute) << 8)
             setlower = True
         elif setlower:
-            self.lval &= 0x7fff                 # Unmask minute
+            self.lval &= 0x7fff  # Unmask minute
         if second is not None:
             bounds(second, 0, 59, "Second must be 0 to 59")
-            self.lval &= 0xff7f                 # Unmask second
+            self.lval &= 0xff7f  # Unmask second
             self.lval |= bcd(second)
         elif setlower:
-            self.lval &= 0xff7f                 # Unmask second
-        stm.mem32[stm.RTC + stm.RTC_WPR] |= 0xCA            # enable write
+            self.lval &= 0xff7f  # Unmask second
+        stm.mem32[stm.RTC + stm.RTC_WPR] |= 0xCA  # enable write
         stm.mem32[stm.RTC + stm.RTC_WPR] |= 0x53
-        stm.mem32[stm.RTC + stm.RTC_CR] &= self.alclear     # Clear ALRxE in RTC_CR to disable Alarm 
-        if self.uval == 0x8080 and self.lval == 0x8080:     # No alarm set: disable
-            stm.mem32[stm.RTC + stm.RTC_WPR] = 0xff         # Write protect
+        stm.mem32[stm.RTC + stm.RTC_CR] &= self.alclear  # Clear ALRxE in RTC_CR to disable Alarm 
+        if self.uval == 0x8080 and self.lval == 0x8080:  # No alarm set: disable
+            stm.mem32[stm.RTC + stm.RTC_WPR] = 0xff  # Write protect
             return
         pyb.delay(5)
         if stm.mem32[stm.RTC + stm.RTC_ISR] & self.albit :  # test ALRxWF IN RTC_ISR
@@ -370,7 +375,7 @@ def why():
                 result = ('X1', 'X3', 'C1', 'C13')[ctz(r)]
         else:
             if stm.mem32[stm.PWR + stm.PWR_CSR] & 1:  # WUF set: the only remaining cause is X1 (?)
-                result = 'X1' # if WUF not set, cause unknown, return None
+                result = 'X1'  # if WUF not set, cause unknown, return None
     if d_series:
         stm.mem32[stm.PWR + stm.PWR_CR2] |= 0x3f  # Clear power wakeup flag WUF
     else:
@@ -385,7 +390,8 @@ def bkpram_ok():
         bkpram[1023] = 0x27288a6f
     return False
 
-def now():  # Return the current time from the RTC in millisecs from year 2000
+# Return the current time from the RTC in millisecs from year 2000
+def now():
     rtc = pyb.RTC()
     secs = utime.time()
     if d_series:
@@ -396,7 +402,8 @@ def now():  # Return the current time from the RTC in millisecs from year 2000
         secs = utime.time()
     return ms + 1000 * secs
 
-def lp_elapsed_ms(tstart):  # An elapsed_ms function which works during lpdelays
+# An elapsed_ms function which works during lpdelays
+def lp_elapsed_ms(tstart):
     return now() - tstart
 
 # Save the current time in mS 
@@ -416,29 +423,29 @@ def ms_left(delta, addr = 1021):
         raise RTCError("Invalid saved time data.")
     return result
 
-def adcread(chan):                              # 16 temp 17 vbat 18 vref
+def adcread(chan):  # 16 temp 17 vbat 18 vref
     bounds(chan, 16, 18, 'Invalid ADC channel')
     start = pyb.millis()
     timeout = 100
-    stm.mem32[stm.RCC + stm.RCC_APB2ENR] |= 0x100 # enable ADC1 clock.0x4100
-    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 1       # Turn on ADC
-    stm.mem32[stm.ADC1 + stm.ADC_CR1] = 0       # 12 bit
+    stm.mem32[stm.RCC + stm.RCC_APB2ENR] |= 0x100  # enable ADC1 clock.0x4100
+    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 1  # Turn on ADC
+    stm.mem32[stm.ADC1 + stm.ADC_CR1] = 0  # 12 bit
     if chan == 17:
-        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x200000 # 15 cycles channel 17
+        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x200000  # 15 cycles channel 17
         stm.mem32[stm.ADC + 4] = 1 << 23
     elif chan == 18:
-        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x1000000 # 15 cycles channel 18 0x1200000
+        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x1000000  # 15 cycles channel 18 0x1200000
         stm.mem32[stm.ADC + 4] = 0xc00000
     else:
-        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x40000 # 15 cycles channel 16
+        stm.mem32[stm.ADC1 + stm.ADC_SMPR1] = 0x40000  # 15 cycles channel 16
         stm.mem32[stm.ADC + 4] = 1 << 23
     stm.mem32[stm.ADC1 + stm.ADC_SQR3] = chan
-    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 1 | (1 << 30) | (1 << 10) # start conversion
+    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 1 | (1 << 30) | (1 << 10)  # start conversion
     while not stm.mem32[stm.ADC1 + stm.ADC_SR] & 2: # wait for EOC
         if pyb.elapsed_millis(start) > timeout:
             raise OSError('ADC timout')
-    data = stm.mem32[stm.ADC1 + stm.ADC_DR]     # clears down EOC
-    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 0       # Turn off ADC
+    data = stm.mem32[stm.ADC1 + stm.ADC_DR]  # clears down EOC
+    stm.mem32[stm.ADC1 + stm.ADC_CR2] = 0  # Turn off ADC
     return data
 
 def v33():
@@ -453,10 +460,7 @@ def vref():
 def temperature():
     return 25 + 400 * (3.3 * adcread(16) / 4096 - 0.76)
 
-# ********** OLD API AND TEST CODE **********
-def battery_volts():
-    adc = pyb.ADCAll(12)
-    return adc.read_core_vbat(), 3.3/(adc.read_core_vref()/1.21)
+# ********** TEST CODE **********
 
 def ms_set(): # For debug purposes only. Decodes outcome of setting rtc.wakeup().
     dividers = (16, 8, 4, 2)

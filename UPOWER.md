@@ -9,9 +9,9 @@ supports only a subset.
 # 2. The Pyboard D
 
 There is currently an issue with Pyboard D firmware which precludes the use of
-any pin to recover from standby. Ways to recover are restricted to timer alarms
-and the tamper mechanism via pin X18 (C13). Unfortunately this pin is only
-brought out on the wbus and WBUS_DIP68 adaptor.
+any pin to wake from standby. Ways to wake are restricted to timer alarms and
+the tamper mechanism via pin X18 (C13). Unfortunately this pin is only brought
+out on the wbus and WBUS_DIP68 adaptor.
 
 I have raised [this PR](https://github.com/micropython/micropython/pull/6494).
 Until this is accepted a solution is to build from this PR. Alternatively
@@ -25,16 +25,17 @@ power applications but not supported in firmware at the time of writing: check
 for official support for any specific feature before using. Access to the
 following processor features is provided:
 
- 1. 4KiB of backup RAM (optionally battery-backed) - accessible as words or
- bytes.
+ 1. 4KiB of backup RAM accessible as words or bytes. May be battery backed.
+ Whether or not battery backed, retains data during standby.
  2. 20 general purpose 32-bit registers also battery backed.
- 3. Wakeup from standby by means of two Pyboard pins.
- 4. Wakeup by means of two independent real time clock (RTC) alarms.
- 5. Access to board voltages and CPU temperature without the drawbacks of
- `ADCAll`. These have largely been superseded by official functions.
-
-Utility functions provide a way to determine the reason for a wakeup and offer a
-low power alternative to the official `delay()` function.
+ 3. Wakeup from standby by means of a switch on the [b]Tamper[/b] pin.
+ 4. Wakeup from standby by means of two Pyboard pins (four on the D series).
+ 5. Wakeup by means of two independent real time clock (RTC) alarms. An alarm
+ provides for (say) a wakeup every the 1st day of the month at 03:15.
+ 6. The ability to determine the reason for wakeup from standby.
+ 7. Support for the `stop` condition. This stops the time source used by
+ `utime`. The module provides alternative ways to do millisecond level timing
+ via the RTC.
 
 All code is released under the [MIT license](./LICENSE)
 
@@ -68,8 +69,8 @@ red, green, yellow = (pyb.LED(x) for x in range(1, 4))  # LED(3) is blue, not ye
 rtc = pyb.RTC()
 rtc.wakeup(None) # If we have a backup battery clear down any setting from a previously running program
 reason = machine.reset_cause()  # Why have we woken?
-if reason == machine.PWRON_RESET or reason == machine.HARD_RESET: # first boot
-    rtc.datetime((2020, 8, 6, 4, 13, 0, 0, 0))  # Code to run on 1st boot only
+if reason in (machine.PWRON_RESET, machine.HARD_RESET, machine.SOFT_RESET):
+    # Code to run when the application is first started
     aa = upower.Alarm('a')
     aa.timeset(second = 39)
     ab = upower.Alarm('b')
@@ -82,7 +83,7 @@ elif reason == machine.DEEPSLEEP_RESET:
     elif reason == 'ALARM_B':
         yellow.on()
 
-upower.lpdelay(1000)     # Let LED's be seen!
+upower.lpdelay(1000)  # Let LED's be seen for 1s.
 pyb.standby()
 ```
 
