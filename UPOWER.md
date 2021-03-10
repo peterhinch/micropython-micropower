@@ -6,7 +6,7 @@ V1.0, V1.1 and D series. The other platforms based on the STM chips may have
 different hardware functionality. This applies to the Pyboard Lite which
 supports only a subset.
 
-# 2. The Pyboard D
+# 2. The Pyboard
 
 There was an issue with Pyboard D firmware which precluded the use of most pins
 to wake from standby. Ways to wake were restricted to timer alarms and the
@@ -397,7 +397,7 @@ Note the pin name aliases:
  3. `C1       W24`
  4. `C13  X18 W26`
 
-Currently this requires modified firmware: see [section 2](./UPOWER.md#2-the-pyboard-d).
+See firmware note in [section 2](./UPOWER.md#2-the-pyboard).
 
 It does not seem to be possible to configure the internal pullups or pull-downs
 in this mode, so if switches are used an external resistor must be supplied.
