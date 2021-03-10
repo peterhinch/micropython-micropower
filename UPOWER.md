@@ -8,15 +8,12 @@ supports only a subset.
 
 # 2. The Pyboard D
 
-There is currently an issue with Pyboard D firmware which precludes the use of
-any pin to wake from standby. Ways to wake are restricted to timer alarms and
-the tamper mechanism via pin X18 (C13). Unfortunately this pin is only brought
-out on the wbus and WBUS_DIP68 adaptor.
-
-I have raised [this PR](https://github.com/micropython/micropython/pull/6494).
-Until this is accepted a solution is to build from this PR. Alternatively
-replace `ports/stm32/powerctrl.c` with that in the `d_series` directory and
-rebuild.
+There was an issue with Pyboard D firmware which precluded the use of most pins
+to wake from standby. Ways to wake were restricted to timer alarms and the
+tamper mechanism via pin X18 (C13). As of 10th March 2021
+[my PR to fix this](https://github.com/micropython/micropython/pull/6494)
+has been merged: to use this capability use a daily build after this date or
+a release build >1.14.
 
 ## 2.1 Introduction
 
