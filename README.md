@@ -1,7 +1,9 @@
 # Reducing Pyboard system power consumption
 
 This repository is specific to STM systems. It primarily supports Pyboard 1.x
-and Pyboard D.
+and Pyboard D. An alternative micropower architecture is to use ESPNow with
+ESP8266 or ESP32. [This document](https://github.com/peterhinch/micropython-mqtt/tree/master/mqtt_as/esp32_gateway)
+describes an MQTT client suitable for long term battery operation.
 
 The Pyboard can be used to build systems with extremely low power consumption,
 and it is possible to build systems capable of running for over a year on
